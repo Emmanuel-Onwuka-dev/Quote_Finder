@@ -474,7 +474,7 @@ export async function locateQuote(
   const variants = await queryVariants(quote, llm, fetchFn);
 
   // 2. Search path + shortlist scoring. A YouTube failure (bad creator, API
-  // error) must not end the request: continue to the memory fallback (§7.4).
+  // error) must not end the request: continue to the memory fallback (§7.1, §7.3).
   let engine: EngineOutput;
   let engineError = "";
   try {
@@ -584,7 +584,7 @@ export async function locateQuote(
     const candidates = padCandidates(engine, []);
     const degradedNotes = [
       ...engineNotes,
-      searchNote(engine),
+      ...(engineError ? [] : [searchNote(engine)]),
       UNVERIFIED_NOTE,
       "the memory fallback was unavailable, so these candidates come only from title/description matching",
     ];
@@ -640,7 +640,7 @@ export async function locateQuote(
 
   const notes = [
     ...engineNotes,
-    searchNote(engine),
+    ...(engineError ? [] : [searchNote(engine)]),
     UNVERIFIED_NOTE,
     "the AI's answer is an estimate from memory, not a verified match",
   ];

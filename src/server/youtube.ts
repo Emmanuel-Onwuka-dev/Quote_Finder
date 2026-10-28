@@ -32,9 +32,15 @@ const MAX_INDEX_VIDEOS = 300;
 const SHORTLIST_CAP = 12;
 const HITS_CAP = 10;
 const KEY_COVERAGE_MIN = 0.6;
+const YT_TIMEOUT_MS = 10000;
+// Muse variants are extra search queries; cap how many we run (each search
+// costs API quota).
+const VARIANT_QUERY_LIMIT = 3;
 
 async function fetchYt(path: string): Promise<unknown> {
-  const res = await fetch(`${API}${path}`);
+  const res = await fetch(`${API}${path}`, {
+    signal: AbortSignal.timeout(YT_TIMEOUT_MS),
+  });
   if (!res.ok) {
     throw new Error(`YouTube API ${res.status} on ${path.split("?")[0]}`);
   }
@@ -184,7 +190,7 @@ export async function listUploads(
   let pageToken = "";
   while (videos.length < max) {
     const data: unknown = await fetchYt(
-      `/playlistItems?part=snippet&maxResults=50&playlistId=${encodeURIComponent(playlistId)}&key=${encodeURIComponent(apiKey)}${pageToken ? `&pageToken=${pageToken}` : ""}`,
+      `/playlistItems?part=snippet&maxResults=50&playlistId=${encodeURIComponent(playlistId)}&key=${encodeURIComponent(apiKey)}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`,
     );
     const page = data as PlaylistItemsResponse;
     for (const item of page.items ?? []) {
@@ -248,6 +254,20 @@ async function searchVideos(
     return [];
   }
   return videosById(ids, apiKey);
+}
+
+// The quote plus the Muse variants, merged in order (§5.4 step 4).
+async function searchQueries(
+  quote: string,
+  variants: string[],
+  apiKey: string,
+  channelId: string,
+): Promise<VideoMeta[]> {
+  const found = await searchVideos(quote, apiKey, channelId, 15);
+  for (const variant of variants.slice(0, VARIANT_QUERY_LIMIT)) {
+    found.push(...(await searchVideos(variant, apiKey, channelId, 8)));
+  }
+  return found;
 }
 
 // --- Time window (§7.6) ---
@@ -365,13 +385,9 @@ export async function searchChannel(
       .map((entry) => entry.video);
   } catch {
     // §5.1: when the full index cannot be built, fall back to in-channel
-    // search (the quote plus up to two Muse variants as extra queries).
+    // search (the quote plus the Muse variants as extra queries).
     onProgress("Indexing uploads", "index unavailable — searching in-channel");
-    const queries = [quote, ...variants.slice(0, 2)];
-    const searched: VideoMeta[] = [];
-    for (const query of queries) {
-      searched.push(...(await searchVideos(query, apiKey, header.channelId)));
-    }
+    const searched = await searchQueries(quote, variants, apiKey, header.channelId);
     const shortlist = mergeShortlist([], searched);
     const hits = scorePool(quote, shortlist, onProgress, counter);
     return {
@@ -384,7 +400,7 @@ export async function searchChannel(
     };
   }
 
-  const searched = await searchVideos(quote, apiKey, header.channelId, 15);
+  const searched = await searchQueries(quote, variants, apiKey, header.channelId);
   const shortlist = mergeShortlist(ranked, searched);
   const hits = scorePool(quote, shortlist, onProgress, counter);
   return {
@@ -399,6 +415,7 @@ export async function searchChannel(
 
 export interface EverywhereSearchInput {
   quote: string;
+  variants: string[];
   apiKey: string;
   onProgress: ProgressFn;
 }
@@ -406,12 +423,16 @@ export interface EverywhereSearchInput {
 export async function searchEverywhere(
   input: EverywhereSearchInput,
 ): Promise<EngineOutput> {
-  const { quote, apiKey, onProgress } = input;
+  const { quote, variants, apiKey, onProgress } = input;
   const counter = { scanned: 0 };
   onProgress("Indexing uploads", "searching all of YouTube");
   const quoted = await searchVideos(`"${quote}"`, apiKey, undefined, 12);
   const bare = await searchVideos(quote, apiKey, undefined, 12);
-  const shortlist = mergeShortlist(quoted, bare);
+  const extra: VideoMeta[] = [];
+  for (const variant of variants.slice(0, VARIANT_QUERY_LIMIT)) {
+    extra.push(...(await searchVideos(variant, apiKey, undefined, 8)));
+  }
+  const shortlist = mergeShortlist(quoted, [...bare, ...extra]);
   const hits = scorePool(quote, shortlist, onProgress, counter);
   return {
     shortlist,

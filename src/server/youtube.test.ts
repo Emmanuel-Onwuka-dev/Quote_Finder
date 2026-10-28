@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   filterAfter,
   mergeShortlist,
   parseCreatorInput,
   scoreVideo,
+  searchEverywhere,
   toPublishedAfter,
   type VideoMeta,
 } from "./youtube";
@@ -128,5 +129,39 @@ describe("scoreVideo", () => {
       video({ id: "v", title: "Go now, the video" }),
     );
     expect(scored).not.toBeNull();
+  });
+});
+
+describe("searchEverywhere query variants", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("sends each Muse variant as an extra search query", async () => {
+    const queries: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const q = new URL(url).searchParams.get("q");
+        if (q) {
+          queries.push(q);
+        }
+        return new Response(JSON.stringify({ items: [] }), { status: 200 });
+      }),
+    );
+
+    await searchEverywhere({
+      quote: "the quick brown fox",
+      variants: ["a fast brown fox", "quick fox jumps"],
+      apiKey: "test-key",
+      onProgress: () => {},
+    });
+
+    expect(queries).toEqual([
+      '"the quick brown fox"',
+      "the quick brown fox",
+      "a fast brown fox",
+      "quick fox jumps",
+    ]);
   });
 });

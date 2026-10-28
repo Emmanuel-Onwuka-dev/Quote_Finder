@@ -32,6 +32,10 @@ downloads.
   tags, server config, Meta API client stub, health endpoint.
 - P1: YouTube engine (channel resolution, upload index, in-channel and
   everywhere search) with fuzzy title/description matching and unit tests.
+- P2: `locateQuote` orchestrator — Muse query variants, shortlist-only
+  ranking, memory fallback with verified links (oEmbed/HEAD), found
+  thresholds, medium confidence cap, and time-window handling, with mocked
+  unit tests.
 
 ## External services and libraries
 

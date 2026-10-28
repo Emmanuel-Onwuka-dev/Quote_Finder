@@ -391,6 +391,17 @@ function searchNote(engine: EngineOutput): string {
 const UNVERIFIED_NOTE =
   "no transcript was read, so the exact moment the line is said is not verified";
 
+function emptyEngine(): EngineOutput {
+  return {
+    shortlist: [],
+    hits: [],
+    scanned: 0,
+    channelTitle: "",
+    channelId: "",
+    videoCount: 0,
+  };
+}
+
 function engineSummary(engine: EngineOutput): LocateResult["engine"] {
   return {
     scanned: engine.scanned,
@@ -462,22 +473,34 @@ export async function locateQuote(
   onProgress("Asking the model", "alternative wordings");
   const variants = await queryVariants(quote, llm, fetchFn);
 
-  // 2. Search path + shortlist scoring.
-  const engine: EngineOutput = creatorInput
-    ? await searchChannel({
-        quote,
-        variants,
-        creator: creatorInput,
-        sinceDays: input.sinceDays,
-        apiKey: youtubeApiKey,
-        onProgress,
-      })
-    : await searchEverywhere({
-        quote,
-        variants,
-        apiKey: youtubeApiKey,
-        onProgress,
-      });
+  // 2. Search path + shortlist scoring. A YouTube failure (bad creator, API
+  // error) must not end the request: continue to the memory fallback (§7.4).
+  let engine: EngineOutput;
+  let engineError = "";
+  try {
+    engine = creatorInput
+      ? await searchChannel({
+          quote,
+          variants,
+          creator: creatorInput,
+          sinceDays: input.sinceDays,
+          apiKey: youtubeApiKey,
+          onProgress,
+        })
+      : await searchEverywhere({
+          quote,
+          variants,
+          apiKey: youtubeApiKey,
+          onProgress,
+        });
+  } catch (error) {
+    engineError =
+      error instanceof Error ? error.message : "YouTube search failed";
+    engine = emptyEngine();
+  }
+  const engineNotes = engineError
+    ? [`YouTube search failed (${engineError}), so the answer comes from memory`]
+    : [];
 
   const shortlistUrls = new Set(
     engine.shortlist.map((video) => youtubeWatchUrl(video.id)),
@@ -560,6 +583,7 @@ export async function locateQuote(
   } catch {
     const candidates = padCandidates(engine, []);
     const degradedNotes = [
+      ...engineNotes,
       searchNote(engine),
       UNVERIFIED_NOTE,
       "the memory fallback was unavailable, so these candidates come only from title/description matching",
@@ -615,6 +639,7 @@ export async function locateQuote(
   const candidates = padCandidates(engine, kept);
 
   const notes = [
+    ...engineNotes,
     searchNote(engine),
     UNVERIFIED_NOTE,
     "the AI's answer is an estimate from memory, not a verified match",

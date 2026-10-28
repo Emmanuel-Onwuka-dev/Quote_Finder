@@ -543,6 +543,35 @@ describe("locateQuote", () => {
     ).toBe(true);
   });
 
+  it("still answers from memory when the YouTube search fails", async () => {
+    const state = setup([
+      { status: 200, body: chatBody(VARIANTS_REPLY) },
+      { status: 200, body: chatBody(fallbackReply({ found: false })) },
+    ]);
+    const healthyFetch = fetch;
+    vi.stubGlobal(
+      "fetch",
+      (async (url: string | URL | Request, init?: { method?: string }) =>
+        String(url).includes("googleapis.com")
+          ? jsonResponse({}, 500)
+          : healthyFetch(url, init)) as unknown as typeof fetch,
+    );
+    const result = await locateQuote(
+      {
+        quote: "xylophone zephyr nebula",
+        creator: "@tester",
+        scene: "",
+        sinceDays: 0,
+      },
+      { llm: TEST_LLM, youtubeApiKey: "yt-key", fetchFn: healthyFetch },
+    );
+    expect(result.found).toBe(false);
+    expect(
+      result.notes.some((note) => note.includes("YouTube search failed")),
+    ).toBe(true);
+    expect(state.metaQueue).toHaveLength(0);
+  });
+
   it("rejects an empty quote", async () => {
     setup();
     await expect(

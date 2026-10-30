@@ -655,7 +655,14 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
       });
     }
     const refreshed = run.indexed.map((video) => video.videoId);
-    store.recordRefreshes(channelId, refreshed, now);
+    // Record every attempt, not just successes: a skipped video (no track,
+    // API error) cost a listing call, and retrying it on every search
+    // would drain the shared viewer budget.
+    store.recordRefreshes(
+      channelId,
+      [...refreshed, ...run.skipped.map((video) => video.videoId)],
+      now,
+    );
     const notes = run.paused ? [VIEWER_BUDGET_SPENT_NOTE] : [];
     const retry = matchArchive(
       toCandidates(store.getMatchableVideos(channelId, now)),

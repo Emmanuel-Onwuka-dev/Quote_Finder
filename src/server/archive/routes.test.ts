@@ -1476,6 +1476,78 @@ describe("search quotas", () => {
     expect(seen).toEqual([]);
   });
 
+  it("does not retry a video with no usable caption track within 24 hours", async () => {
+    const { app, store, seen } = setup(
+      { tracks: { status: 200, body: { items: [] } } },
+      { now: SEARCH_NOW },
+    );
+    saveListedChannel(store);
+    seedStaleAsr(store, "v1", "2026-09-10T00:00:00Z");
+    const first = await postSearch(app, {
+      channelId: "UCchan1",
+      quote: SEARCH_QUOTE,
+    });
+    expect((await first.json()) as unknown).toMatchObject({
+      found: false,
+      refreshed: [],
+    });
+    // One listing call on the viewer budget, nothing else anywhere.
+    expect(store.getSpent("2026-10-30", "viewer")).toBe(50);
+    expect(store.getSpent("2026-10-30", "creator")).toBe(0);
+    expect(
+      store.recentlyRefreshedVideoIds(
+        "UCchan1",
+        new Date(SEARCH_NOW.getTime() - 24 * 60 * 60 * 1000),
+      ),
+    ).toEqual(["v1"]);
+    const callsAfterFirst = seen.length;
+    const second = await postSearch(app, {
+      channelId: "UCchan1",
+      quote: "zebra elephant giraffe",
+    });
+    expect((await second.json()) as unknown).toMatchObject({
+      found: false,
+      refreshed: [],
+    });
+    expect(seen.length).toBe(callsAfterFirst);
+    expect(store.getSpent("2026-10-30", "viewer")).toBe(50);
+  });
+
+  it("records a refresh that fails with an API error the same way", async () => {
+    const { app, store, seen } = setup(
+      { tracks: { status: 500, body: {} } },
+      { now: SEARCH_NOW },
+    );
+    saveListedChannel(store);
+    seedStaleAsr(store, "v1", "2026-09-10T00:00:00Z");
+    const first = await postSearch(app, {
+      channelId: "UCchan1",
+      quote: SEARCH_QUOTE,
+    });
+    expect((await first.json()) as unknown).toMatchObject({
+      found: false,
+      refreshed: [],
+    });
+    expect(store.getSpent("2026-10-30", "viewer")).toBe(50);
+    expect(
+      store.recentlyRefreshedVideoIds(
+        "UCchan1",
+        new Date(SEARCH_NOW.getTime() - 24 * 60 * 60 * 1000),
+      ),
+    ).toEqual(["v1"]);
+    const callsAfterFirst = seen.length;
+    const second = await postSearch(app, {
+      channelId: "UCchan1",
+      quote: "zebra elephant giraffe",
+    });
+    expect((await second.json()) as unknown).toMatchObject({
+      found: false,
+      refreshed: [],
+    });
+    expect(seen.length).toBe(callsAfterFirst);
+    expect(store.getSpent("2026-10-30", "viewer")).toBe(50);
+  });
+
   it("rate-limits archive search per client", async () => {
     const { app, store } = setup({}, { now: SEARCH_NOW });
     saveListedChannel(store);

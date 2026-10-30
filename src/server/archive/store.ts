@@ -63,10 +63,12 @@ export function todayKey(now: Date = new Date()): string {
   return now.toISOString().slice(0, 10);
 }
 
+function freshnessCutoffMs(now: Date): number {
+  return now.getTime() - ARCHIVE_FRESH_DAYS * 24 * 60 * 60 * 1000;
+}
+
 function freshnessCutoff(now: Date): string {
-  return new Date(
-    now.getTime() - ARCHIVE_FRESH_DAYS * 24 * 60 * 60 * 1000,
-  ).toISOString();
+  return new Date(freshnessCutoffMs(now)).toISOString();
 }
 
 export function videoFreshness(
@@ -76,7 +78,9 @@ export function videoFreshness(
   if (!row) {
     return "never";
   }
-  if (row.cue_count > 0 && row.fetched_at > freshnessCutoff(now)) {
+  // Compare as time, not text: "…00Z" sorts after "…00.000Z", which
+  // would wrongly call the cutoff second fresh.
+  if (row.cue_count > 0 && Date.parse(row.fetched_at) > freshnessCutoffMs(now)) {
     return "fresh";
   }
   return "expired";
@@ -165,12 +169,14 @@ export function openArchiveStore(path: string): ArchiveStore {
   `);
   const countFreshStmt = db.prepare(`
     SELECT COUNT(*) AS count FROM videos v
-    WHERE v.channel_id = ? AND v.fetched_at > ?
+    WHERE v.channel_id = ?
+      AND strftime('%s', v.fetched_at) > strftime('%s', ?)
       AND EXISTS (SELECT 1 FROM cues c WHERE c.video_id = v.video_id)
   `);
   const purgeStmt = db.prepare(`
     DELETE FROM cues WHERE video_id IN (
-      SELECT video_id FROM videos WHERE fetched_at <= ?
+      SELECT video_id FROM videos
+      WHERE strftime('%s', fetched_at) <= strftime('%s', ?)
     )
   `);
   const deleteChannelCuesStmt = db.prepare(`

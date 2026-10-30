@@ -850,6 +850,19 @@ describe("archive storage", () => {
       body: JSON.stringify({ channelId: "UCchan1", videoIds: ["vid1"] }),
     });
     expect(res.status).toBe(200);
+    // Drain the stream: the run saves its results only as the body is
+    // consumed, so asserting storage before this races the pump.
+    const events = parseSseEvents(await res.text());
+    const kinds = events.map((event) => event.event);
+    expect(kinds[kinds.length - 1]).toBe("result");
+    const result = JSON.parse(events[events.length - 1]?.data ?? "{}") as {
+      indexed: unknown[];
+      paused: boolean;
+    };
+    expect(result.paused).toBe(false);
+    expect(result.indexed).toEqual([
+      { videoId: "vid1", trackKind: "standard", language: "en", cueCount: 1 },
+    ]);
     const status = await app.request("/api/archive/status");
     expect((await status.json()) as unknown).toEqual({
       creators: [

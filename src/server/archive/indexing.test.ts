@@ -98,7 +98,23 @@ describe("runIndexing", () => {
     const store = setup();
     const { fetchFn } = scriptedFetch((href) => {
       if (href.includes("/captions?")) {
-        return jsonResponse({ items: [] });
+        const videoId = new URL(href).searchParams.get("videoId");
+        return jsonResponse(
+          videoId === "bare"
+            ? { items: [] }
+            : {
+                items: [
+                  {
+                    id: "t1",
+                    snippet: {
+                      language: "en",
+                      trackKind: "standard",
+                      status: "serving",
+                    },
+                  },
+                ],
+              },
+        );
       }
       return { ok: true, status: 200, text: async () => SRT } as Response;
     });

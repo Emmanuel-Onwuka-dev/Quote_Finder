@@ -1,7 +1,9 @@
 import { useEffect, useRef } from "react";
 import type { LocateResult, ProgressUpdate } from "../hooks/useQuoteStream";
+import { CandidateList } from "./CandidateList";
 import type { SearchInput } from "./Composer";
 import { Progress } from "./Progress";
+import { ResultCard } from "./ResultCard";
 
 export interface TurnState {
   id: number;
@@ -67,21 +69,18 @@ export function Turn({ turn, running, onRetry }: TurnProps) {
       )}
 
       {turn.status === "done" && turn.result && (
-        <div className="mt-4 border-t border-border pt-4">
+        <>
           {turn.result.found ? (
-            <p>
-              <span className="font-medium">{turn.result.videoTitle}</span>{" "}
-              <span className="font-mono text-sm text-muted">
-                {turn.result.videoUrl}
-              </span>
-            </p>
+            <ResultCard result={turn.result} window={turn.window} />
           ) : (
-            <p className="text-muted">
-              No confident match — {turn.result.candidates.length} possible
-              matches.
-            </p>
+            <CandidateList
+              candidates={turn.result.candidates}
+              notes={turn.result.notes}
+              publishedAt={turn.result.publishedAt}
+              window={turn.window}
+            />
           )}
-        </div>
+        </>
       )}
     </li>
   );

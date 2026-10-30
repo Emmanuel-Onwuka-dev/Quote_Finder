@@ -317,3 +317,66 @@ describe("POST /disconnect", () => {
     expect(empty.status).toBe(400);
   });
 });
+
+describe("client-origin redirects", () => {
+  async function startWithReferer(
+    app: Hono,
+    referer: string,
+  ): Promise<{ state: string; cookie: string }> {
+    const res = await app.request("/api/archive/oauth/start", {
+      headers: { referer },
+    });
+    expect(res.status).toBe(302);
+    const location = res.headers.get("location") ?? "";
+    return {
+      state: new URL(location).searchParams.get("state") ?? "",
+      cookie: res.headers.get("set-cookie") ?? "",
+    };
+  }
+
+  it("returns to the client's origin after connect", async () => {
+    const { app } = setup();
+    const { state, cookie } = await startWithReferer(
+      app,
+      "http://localhost:5173/creator",
+    );
+    const res = await app.request(
+      `/api/archive/oauth/callback?code=auth-code&state=${state}`,
+      { headers: { cookie } },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(
+      "http://localhost:5173/creator?connected=1",
+    );
+  });
+
+  it("keeps the client origin on error redirects", async () => {
+    const { app } = setup({ token: { status: 400, body: {} } });
+    const { state, cookie } = await startWithReferer(
+      app,
+      "http://localhost:5173/creator",
+    );
+    const res = await app.request(
+      `/api/archive/oauth/callback?code=auth-code&state=${state}`,
+      { headers: { cookie } },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toContain(
+      "http://localhost:5173/creator?error=",
+    );
+  });
+
+  it("ignores a non-http referer", async () => {
+    const { app } = setup();
+    const { state, cookie } = await startWithReferer(
+      app,
+      "javascript:alert(1)",
+    );
+    const res = await app.request(
+      `/api/archive/oauth/callback?code=auth-code&state=${state}`,
+      { headers: { cookie } },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/creator?connected=1");
+  });
+});

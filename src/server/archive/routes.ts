@@ -30,6 +30,26 @@ export interface ArchiveDeps {
 const STATE_COOKIE = "archive_oauth_state";
 const PENDING_TTL_MS = 10 * 60 * 1000;
 
+/**
+ * Where to send the browser after OAuth: the origin that started the flow
+ * (the client page), so dev (split ports) and prod (single origin) both
+ * land correctly. Null falls back to a same-origin relative redirect.
+ */
+function returnBaseFromReferer(referer: string | undefined): string | null {
+  if (!referer) {
+    return null;
+  }
+  try {
+    const url = new URL(referer);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null;
+    }
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
 const DisconnectSchema = z.object({ channelId: z.string().min(1) });
 
 export function createArchiveRoutes(deps: ArchiveDeps) {
@@ -37,7 +57,10 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
   const store =
     deps.store ?? openArchiveStore(deps.archiveDbPath ?? "./archive.db");
   const fetchFn = deps.fetchFn ?? fetch;
-  const pending = new Map<string, { verifier: string; createdAt: number }>();
+  const pending = new Map<
+    string,
+    { verifier: string; returnBase: string | null; createdAt: number }
+  >();
 
   function prunePending(now: number): void {
     for (const [state, session] of pending) {
@@ -63,7 +86,11 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
     const state = createState();
     const verifier = createCodeVerifier();
     prunePending(Date.now());
-    pending.set(state, { verifier, createdAt: Date.now() });
+    pending.set(state, {
+      verifier,
+      returnBase: returnBaseFromReferer(c.req.header("referer")),
+      createdAt: Date.now(),
+    });
     setCookie(c, STATE_COOKIE, state, {
       httpOnly: true,
       sameSite: "Lax",
@@ -82,8 +109,8 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
   });
 
   app.get("/oauth/callback", async (c) => {
-    const fail = (message: string) =>
-      c.redirect(`/creator?error=${encodeURIComponent(message)}`);
+    const fail = (message: string, base: string | null) =>
+      c.redirect(`${base ?? ""}/creator?error=${encodeURIComponent(message)}`);
     const state = c.req.query("state") ?? "";
     const code = c.req.query("code") ?? "";
     prunePending(Date.now());
@@ -91,6 +118,7 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
     if (!state || !code || !session || getCookie(c, STATE_COOKIE) !== state) {
       return fail(
         "Sign-in expired or was opened in another tab. Please try again.",
+        null,
       );
     }
     pending.delete(state);
@@ -113,9 +141,12 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
         tokenEnc: encryptToken(tokens.refreshToken, deps.archiveTokenKey),
       });
     } catch (error) {
-      return fail(error instanceof Error ? error.message : "Sign-in failed");
+      return fail(
+        error instanceof Error ? error.message : "Sign-in failed",
+        session.returnBase,
+      );
     }
-    return c.redirect("/creator?connected=1");
+    return c.redirect(`${session.returnBase ?? ""}/creator?connected=1`);
   });
 
   app.get("/status", (c) => {

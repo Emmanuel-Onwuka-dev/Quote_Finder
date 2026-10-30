@@ -4,10 +4,10 @@ import { formatDate, videoIdFromUrl, youtubeEmbedUrl } from "../lib/format";
 
 interface ResultCardProps {
   result: LocateResult;
-  window: string;
+  timeWindow: string;
 }
 
-export function ResultCard({ result, window }: ResultCardProps) {
+export function ResultCard({ result, timeWindow }: ResultCardProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [copied, setCopied] = useState(false);
   const videoId = videoIdFromUrl(result.videoUrl);
@@ -44,7 +44,7 @@ export function ResultCard({ result, window }: ResultCardProps) {
         </span>
       )}
       <p className="mt-3 font-mono text-sm text-muted">
-        {result.creator || "Unknown creator"} · {window}
+        {result.creator || "Unknown creator"} · {timeWindow}
       </p>
       <h3
         ref={headingRef}

@@ -37,18 +37,21 @@ const VID1 = {
   title: "My quantum bicycle build",
   description: "A film about restoring a quantum bicycle frame.",
   publishedAt: "2026-10-01T00:00:00Z",
+  channelTitle: "Quantum Films",
 };
 
 const VID2 = {
   title: "Cooking pasta for dinner",
   description: "An evening of Italian cooking.",
   publishedAt: "2026-09-01T00:00:00Z",
+  channelTitle: "Pasta Night",
 };
 
 const VID3 = {
   title: "Gardening tips for autumn",
   description: "Preparing the vegetable beds for winter.",
   publishedAt: "2026-10-10T00:00:00Z",
+  channelTitle: "Garden Hour",
 };
 
 const PLAYLIST_PAYLOAD = {
@@ -201,6 +204,7 @@ function contextWith(shortlistTitles: string[] = []): PromptContext {
       title,
       publishedAt: "2026-10-01T00:00:00Z",
       description: "",
+      channelTitle: "Test Channel",
     })),
   };
 }
@@ -580,5 +584,43 @@ describe("locateQuote", () => {
         { llm: TEST_LLM, youtubeApiKey: "yt-key", fetchFn: fetch },
       ),
     ).rejects.toThrow("quote must not be empty");
+  });
+
+  it("uses the video's channel for a found result with no creator", async () => {
+    const state = setup([
+      { status: 200, body: chatBody(VARIANTS_REPLY) },
+      { status: 200, body: chatBody(RANK_VID1_REPLY) },
+    ]);
+    const result = await locateQuote(
+      { quote: "quantum bicycle", creator: "  ", scene: "", sinceDays: 0 },
+      { llm: TEST_LLM, youtubeApiKey: "yt-key", fetchFn: fetch },
+    );
+    expect(result.found).toBe(true);
+    expect(result.videoUrl).toBe(youtubeWatchUrl("vid1"));
+    expect(result.creator).toBe("Quantum Films");
+    expect(state.metaQueue).toHaveLength(0);
+  });
+
+  it("pads candidates with each video's channel title", async () => {
+    setup([
+      { status: 200, body: chatBody(VARIANTS_REPLY) },
+      { status: 200, body: chatBody(RANK_VID1_REPLY) },
+      { status: 500, body: {} },
+    ]);
+    const result = await locateQuote(
+      {
+        quote: "xylophone zephyr nebula",
+        creator: "",
+        scene: "",
+        sinceDays: 0,
+      },
+      { llm: TEST_LLM, youtubeApiKey: "yt-key", fetchFn: fetch },
+    );
+    expect(result.found).toBe(false);
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]?.creator).toBe("Quantum Films");
+    expect(result.candidates[0]?.reason.startsWith("Possible match")).toBe(
+      true,
+    );
   });
 });

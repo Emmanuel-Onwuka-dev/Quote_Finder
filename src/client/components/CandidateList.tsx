@@ -7,7 +7,7 @@ interface CandidateListProps {
   candidates: QuoteCandidate[];
   notes: string[];
   publishedAt: string;
-  window: string;
+  timeWindow: string;
 }
 
 const secondaryButton =
@@ -17,7 +17,7 @@ export function CandidateList({
   candidates,
   notes,
   publishedAt,
-  window,
+  timeWindow,
 }: CandidateListProps) {
   return (
     <div className="mt-4 border-t border-border pt-4">
@@ -35,7 +35,7 @@ export function CandidateList({
             key={`${index}-${candidate.url}`}
             candidate={candidate}
             publishedAt={publishedAt}
-            window={window}
+            timeWindow={timeWindow}
           />
         ))}
       </ul>
@@ -46,15 +46,15 @@ export function CandidateList({
 function CandidateItem({
   candidate,
   publishedAt,
-  window,
+  timeWindow,
 }: {
   candidate: QuoteCandidate;
   publishedAt: string;
-  window: string;
+  timeWindow: string;
 }) {
   const [playing, setPlaying] = useState(false);
   const videoId = videoIdFromUrl(candidate.url);
-  const meta = [candidate.creator, formatDate(publishedAt), window]
+  const meta = [candidate.creator, formatDate(publishedAt), timeWindow]
     .filter(Boolean)
     .join(" · ");
 

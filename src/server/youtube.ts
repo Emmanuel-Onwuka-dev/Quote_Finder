@@ -238,7 +238,7 @@ export async function listUploads(
   return videos;
 }
 
-async function videosById(ids: string[], apiKey: string): Promise<VideoMeta[]> {
+export async function videosById(ids: string[], apiKey: string): Promise<VideoMeta[]> {
   const videos: VideoMeta[] = [];
   for (let i = 0; i < ids.length; i += 50) {
     const batch = ids.slice(i, i + 50);

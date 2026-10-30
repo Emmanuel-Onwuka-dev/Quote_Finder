@@ -1,12 +1,12 @@
-// Creator archive HTTP routes (§4.1, §4.2, §4.4): OAuth connect, status,
-// upload listing, caption indexing, and disconnect. Mounted at
-// /api/archive. Secrets never leave the server: the browser sees channel
-// titles and counts only.
+// Creator archive HTTP routes (§4.1–§4.4): OAuth connect, status, upload
+// listing, caption indexing, and disconnect. Mounted at /api/archive.
+// Secrets never leave the server: the browser sees channel titles and
+// counts only.
 
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
-import { listUploadsPage, resolveChannel } from "../youtube";
+import { listUploadsPage, resolveChannel, videosById } from "../youtube";
 import { SSE_HEADERS, formatSseEvent } from "../quote-stream";
 import { decryptToken, encryptToken } from "./crypto";
 import { INDEX_PAUSED_MESSAGE, runIndexing } from "./indexing";
@@ -24,6 +24,7 @@ import {
   DAILY_BUDGET_UNITS,
   openArchiveStore,
   todayKey,
+  videoFreshness,
   type ArchiveStore,
 } from "./store";
 
@@ -184,16 +185,16 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
   });
 
   app.get("/status", (c) => {
+    const now = deps.now ?? new Date();
     return c.json({
       creators: store.listCreators().map((row) => ({
         channelId: row.channel_id,
         channelTitle: row.channel_title,
-        // Indexed-video count arrives with caption storage in A3.
-        videoCount: 0,
+        videoCount: store.countFreshVideos(row.channel_id, now),
         listed: row.listed === 1,
       })),
       budget: {
-        spentUnits: store.getSpent(todayKey(deps.now ?? new Date())),
+        spentUnits: store.getSpent(todayKey(now)),
         capUnits: DAILY_BUDGET_UNITS,
       },
     });
@@ -217,11 +218,18 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
         deps.youtubeApiKey,
         c.req.query("pageToken") ?? undefined,
       );
+      const now = deps.now ?? new Date();
+      const states = new Map(
+        store
+          .getIndexedVideos(channelId)
+          .map((row) => [row.video_id, row] as const),
+      );
       return c.json({
         videos: page.videos.map((video) => ({
           id: video.id,
           title: video.title,
           publishedAt: video.publishedAt,
+          indexed: videoFreshness(states.get(video.id), now),
         })),
         ...(page.nextPageToken ? { nextPageToken: page.nextPageToken } : {}),
       });
@@ -250,6 +258,9 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
         400,
       );
     }
+    if (!deps.youtubeApiKey) {
+      return c.json({ message: "Missing server env YOUTUBE_API_KEY." }, 500);
+    }
     const { channelId, videoIds } = parsed.data;
     let accessToken: string | null;
     try {
@@ -269,6 +280,7 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
       return c.json({ message: "channel is not connected" }, 404);
     }
     const token = accessToken;
+    const now = deps.now ?? new Date();
     let closed = false;
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
@@ -279,16 +291,44 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
           }
         };
         try {
+          const purged = store.purgeExpired(now);
+          if (purged > 0) {
+            send("progress", {
+              stage: "Purging expired captions",
+              detail: `${purged} cues`,
+            });
+          }
           const result = await runIndexing({
             videoIds,
             accessToken: token,
             store,
             fetchFn,
             onProgress: (stage, detail) => send("progress", { stage, detail }),
-            now: deps.now,
+            now,
           });
+          if (result.indexed.length > 0) {
+            const details = await videosById(
+              result.indexed.map((video) => video.videoId),
+              deps.youtubeApiKey,
+            );
+            const byId = new Map(
+              details.map((video) => [video.id, video] as const),
+            );
+            for (const video of result.indexed) {
+              const meta = byId.get(video.videoId);
+              store.saveVideoWithCues({
+                channelId,
+                videoId: video.videoId,
+                title: meta?.title ?? "",
+                publishedAt: meta?.publishedAt ?? "",
+                trackKind: video.trackKind,
+                fetchedAt: now.toISOString(),
+                cues: video.cues,
+              });
+            }
+          }
           send("result", {
-            // Cue text stays server-side for A3 storage; the event carries
+            // Cue text stays server-side in storage; the event carries
             // counts so the creator page can summarize the run.
             indexed: result.indexed.map((video) => ({
               videoId: video.videoId,
@@ -335,9 +375,10 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
     if (!row) {
       return c.json({ message: "channel is not connected" }, 404);
     }
-    // Best effort: local data is deleted even when the revoke call fails
-    // (e.g. the token was already revoked at Google), so the creator can
-    // always get out. Video/caption rows join this delete in A3.
+    // Best effort: local data — credentials, videos, and cues, in one
+    // transaction — is deleted even when the revoke call fails (e.g. the
+    // token was already revoked at Google), so the creator can always
+    // get out.
     let revoked = true;
     try {
       await revokeToken(
@@ -347,7 +388,7 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
     } catch {
       revoked = false;
     }
-    store.deleteCreator(row.channel_id);
+    store.deleteChannel(row.channel_id);
     return c.json({ ok: true, revoked });
   });
 

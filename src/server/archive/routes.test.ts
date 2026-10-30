@@ -524,7 +524,12 @@ describe("GET /videos", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       videos: [
-        { id: "v1", title: "First", publishedAt: "2026-10-01T00:00:00Z" },
+        {
+          id: "v1",
+          title: "First",
+          publishedAt: "2026-10-01T00:00:00Z",
+          indexed: "never",
+        },
       ],
       nextPageToken: "tok123",
     });
@@ -541,7 +546,12 @@ describe("GET /videos", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       videos: [
-        { id: "v2", title: "Second", publishedAt: "2026-10-02T00:00:00Z" },
+        {
+          id: "v2",
+          title: "Second",
+          publishedAt: "2026-10-02T00:00:00Z",
+          indexed: "never",
+        },
       ],
     });
     expect(seen.some((href) => href.includes("pageToken=tok123"))).toBe(true);
@@ -581,6 +591,24 @@ describe("POST /index", () => {
   it("streams progress then a result summary", async () => {
     const { app, store, seen } = setup();
     saveConnectedChannel(store);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse({
+          items: [
+            {
+              id: "vid1",
+              snippet: {
+                title: "Vid one",
+                description: "",
+                publishedAt: "2026-10-01T00:00:00Z",
+                channelTitle: "Test Channel",
+              },
+            },
+          ],
+        }),
+      ),
+    );
     const res = await postIndex(app, {
       channelId: "UCchan1",
       videoIds: ["vid1"],
@@ -690,5 +718,216 @@ describe("POST /index", () => {
       videoIds: ["v1"],
     });
     expect(res.status).toBe(502);
+  });
+});
+
+describe("archive storage", () => {
+  function stubChannelUploads(): void {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const parsed = new URL(url);
+        if (parsed.pathname === "/youtube/v3/search") {
+          return jsonResponse({ items: [{ id: { channelId: "UCchan1" } }] });
+        }
+        if (parsed.pathname === "/youtube/v3/channels") {
+          return jsonResponse({
+            items: [
+              {
+                id: "UCchan1",
+                snippet: { title: "Test Channel" },
+                contentDetails: { relatedPlaylists: { uploads: "UUchan1" } },
+              },
+            ],
+          });
+        }
+        if (parsed.pathname === "/youtube/v3/playlistItems") {
+          return jsonResponse({
+            items: [
+              {
+                snippet: {
+                  title: "Fresh vid",
+                  description: "",
+                  publishedAt: "2026-10-01T00:00:00Z",
+                  resourceId: { videoId: "fresh" },
+                },
+              },
+              {
+                snippet: {
+                  title: "Old vid",
+                  description: "",
+                  publishedAt: "2026-09-01T00:00:00Z",
+                  resourceId: { videoId: "old" },
+                },
+              },
+              {
+                snippet: {
+                  title: "New vid",
+                  description: "",
+                  publishedAt: "2026-10-29T00:00:00Z",
+                  resourceId: { videoId: "unseen" },
+                },
+              },
+            ],
+          });
+        }
+        if (parsed.pathname === "/youtube/v3/videos") {
+          return jsonResponse({
+            items: [
+              {
+                id: "vid1",
+                snippet: {
+                  title: "Vid one",
+                  description: "",
+                  publishedAt: "2026-10-01T00:00:00Z",
+                  channelTitle: "Test Channel",
+                },
+              },
+            ],
+          });
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      }),
+    );
+  }
+
+  it("marks uploads fresh, expired, or never", async () => {
+    const now = new Date("2026-10-30T12:00:00Z");
+    const { app, store } = setup({}, { now });
+    saveConnectedChannel(store);
+    store.saveVideoWithCues({
+      channelId: "UCchan1",
+      videoId: "fresh",
+      title: "Fresh vid",
+      publishedAt: "",
+      trackKind: "standard",
+      fetchedAt: "2026-10-29T00:00:00Z",
+      cues: [{ idx: 1, startSeconds: 1, endSeconds: 2, text: "hi" }],
+    });
+    store.saveVideoWithCues({
+      channelId: "UCchan1",
+      videoId: "old",
+      title: "Old vid",
+      publishedAt: "",
+      trackKind: "asr",
+      fetchedAt: "2026-09-01T00:00:00Z",
+      cues: [{ idx: 1, startSeconds: 1, endSeconds: 2, text: "hi" }],
+    });
+    stubChannelUploads();
+    const res = await app.request("/api/archive/videos?channelId=UCchan1");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      videos: [
+        {
+          id: "fresh",
+          title: "Fresh vid",
+          publishedAt: "2026-10-01T00:00:00Z",
+          indexed: "fresh",
+        },
+        {
+          id: "old",
+          title: "Old vid",
+          publishedAt: "2026-09-01T00:00:00Z",
+          indexed: "expired",
+        },
+        {
+          id: "unseen",
+          title: "New vid",
+          publishedAt: "2026-10-29T00:00:00Z",
+          indexed: "never",
+        },
+      ],
+    });
+  });
+
+  it("stores index runs and counts them in status", async () => {
+    const { app, store } = setup();
+    saveConnectedChannel(store);
+    stubChannelUploads();
+    const res = await app.request("/api/archive/index", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channelId: "UCchan1", videoIds: ["vid1"] }),
+    });
+    expect(res.status).toBe(200);
+    const status = await app.request("/api/archive/status");
+    expect((await status.json()) as unknown).toEqual({
+      creators: [
+        {
+          channelId: "UCchan1",
+          channelTitle: "Test Channel",
+          videoCount: 1,
+          listed: false,
+        },
+      ],
+      budget: { spentUnits: 250, capUnits: 5000 },
+    });
+    expect(store.getIndexedVideos("UCchan1")).toEqual([
+      expect.objectContaining({
+        video_id: "vid1",
+        title: "Vid one",
+        track_kind: "standard",
+        cue_count: 1,
+      }),
+    ]);
+  });
+
+  it("purges expired cues at the start of a run", async () => {
+    const now = new Date("2026-10-30T12:00:00Z");
+    const { app, store } = setup({}, { now });
+    saveConnectedChannel(store);
+    store.saveVideoWithCues({
+      channelId: "UCchan1",
+      videoId: "old",
+      title: "Old vid",
+      publishedAt: "",
+      trackKind: "asr",
+      fetchedAt: "2026-09-01T00:00:00Z",
+      cues: [
+        { idx: 1, startSeconds: 1, endSeconds: 2, text: "a" },
+        { idx: 2, startSeconds: 3, endSeconds: 4, text: "b" },
+      ],
+    });
+    stubChannelUploads();
+    const res = await app.request("/api/archive/index", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channelId: "UCchan1", videoIds: ["vid1"] }),
+    });
+    const events = parseSseEvents(await res.text());
+    expect(events[0]).toEqual({
+      event: "progress",
+      data: JSON.stringify({
+        stage: "Purging expired captions",
+        detail: "2 cues",
+      }),
+    });
+    const byId = new Map(
+      store.getIndexedVideos("UCchan1").map((video) => [video.video_id, video]),
+    );
+    expect(byId.get("old")).toMatchObject({ title: "Old vid", cue_count: 0 });
+    expect(byId.get("vid1")).toMatchObject({ cue_count: 1 });
+  });
+
+  it("disconnect deletes videos and cues", async () => {
+    const { app, store } = setup();
+    saveConnectedChannel(store);
+    store.saveVideoWithCues({
+      channelId: "UCchan1",
+      videoId: "vid1",
+      title: "Vid one",
+      publishedAt: "",
+      trackKind: "standard",
+      fetchedAt: "2026-10-30T00:00:00Z",
+      cues: [{ idx: 1, startSeconds: 1, endSeconds: 2, text: "hi" }],
+    });
+    const res = await app.request("/api/archive/disconnect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channelId: "UCchan1" }),
+    });
+    expect(res.status).toBe(200);
+    expect(store.getCreator("UCchan1")).toBeUndefined();
+    expect(store.getIndexedVideos("UCchan1")).toEqual([]);
   });
 });

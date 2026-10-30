@@ -570,7 +570,7 @@ describe("GET /videos", () => {
 });
 
 describe("POST /index", () => {
-  function postIndex(app: Hono, body: unknown): Promise<Response> {
+  async function postIndex(app: Hono, body: unknown): Promise<Response> {
     return app.request("/api/archive/index", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

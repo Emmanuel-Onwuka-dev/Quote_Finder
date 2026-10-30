@@ -1,21 +1,85 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { LogoMark } from "./components/Brand";
 import { Composer, type SearchInput } from "./components/Composer";
+import { Turn, type TurnState } from "./components/Turn";
+import {
+  useQuoteStream,
+  type LocateResult,
+  type ProgressUpdate,
+} from "./hooks/useQuoteStream";
 import { timeWindowLabel } from "./lib/format";
 
-interface TurnDraft {
-  id: number;
-  input: SearchInput;
-}
-
 export default function App() {
-  const [turns, setTurns] = useState<TurnDraft[]>([]);
+  const [turns, setTurns] = useState<TurnState[]>([]);
+  const [composerError, setComposerError] = useState<string | null>(null);
+  const [resetKey, setResetKey] = useState(0);
   const nextId = useRef(1);
+  const { running, start } = useQuoteStream();
 
-  const handleSubmit = (input: SearchInput) => {
-    const id = nextId.current++;
-    setTurns((prev) => [...prev, { id, input }]);
-  };
+  const updateTurn = useCallback((id: number, patch: Partial<TurnState>) => {
+    setTurns((prev) =>
+      prev.map((turn) => (turn.id === id ? { ...turn, ...patch } : turn)),
+    );
+  }, []);
+
+  const startSearch = useCallback(
+    (input: SearchInput) => {
+      const id = nextId.current++;
+      const window = timeWindowLabel(input.sinceDays);
+      setComposerError(null);
+      let started = false;
+      start(input, {
+        onStarted: () => {
+          started = true;
+          setTurns((prev) => [
+            ...prev,
+            {
+              id,
+              input,
+              window,
+              status: "streaming",
+              progress: [],
+              result: null,
+              error: null,
+            },
+          ]);
+          setResetKey((key) => key + 1);
+        },
+        onProgress: (update: ProgressUpdate) => {
+          setTurns((prev) =>
+            prev.map((turn) =>
+              turn.id === id
+                ? { ...turn, progress: [...turn.progress, update] }
+                : turn,
+            ),
+          );
+        },
+        onResult: (result: LocateResult) => {
+          updateTurn(id, { status: "done", result });
+        },
+        onError: (message: string) => {
+          if (started) {
+            updateTurn(id, { status: "error", error: message });
+          } else {
+            setTurns((prev) => [
+              ...prev,
+              {
+                id,
+                input,
+                window,
+                status: "error",
+                progress: [],
+                result: null,
+                error: message,
+              },
+            ]);
+            setComposerError(message);
+          }
+        },
+      });
+    },
+    [start, updateTurn],
+  );
 
   return (
     <div className="min-h-screen bg-background font-body text-foreground">
@@ -41,21 +105,12 @@ export default function App() {
           ) : (
             <ol className="space-y-6">
               {turns.map((turn) => (
-                <li
+                <Turn
                   key={turn.id}
-                  className="rounded-xl border border-border bg-card p-5"
-                >
-                  <p className="font-mono text-sm text-muted">
-                    {turn.input.creator || "Any creator"} ·{" "}
-                    {timeWindowLabel(turn.input.sinceDays)}
-                  </p>
-                  <p className="mt-2 font-display text-xl">
-                    &ldquo;{turn.input.quote}&rdquo;
-                  </p>
-                  {turn.input.scene && (
-                    <p className="mt-2 text-muted">{turn.input.scene}</p>
-                  )}
-                </li>
+                  turn={turn}
+                  running={running}
+                  onRetry={startSearch}
+                />
               ))}
             </ol>
           )}
@@ -63,10 +118,10 @@ export default function App() {
 
         <div className="bg-background pb-6 pt-2 md:sticky md:bottom-0">
           <Composer
-            disabled={false}
-            serverError={null}
-            resetKey={0}
-            onSubmit={handleSubmit}
+            disabled={running}
+            serverError={composerError}
+            resetKey={resetKey}
+            onSubmit={startSearch}
           />
         </div>
       </div>

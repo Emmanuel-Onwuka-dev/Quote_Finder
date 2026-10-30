@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   filterAfter,
+  listUploadsPage,
   mergeShortlist,
   parseCreatorInput,
   scoreVideo,
+  searchChannel,
   searchEverywhere,
   toPublishedAfter,
   type VideoMeta,
@@ -14,6 +16,7 @@ function video(partial: Partial<VideoMeta> & { id: string }): VideoMeta {
     title: "",
     publishedAt: "2026-10-01T00:00:00Z",
     description: "",
+    channelTitle: "",
     ...partial,
   };
 }
@@ -163,5 +166,142 @@ describe("searchEverywhere query variants", () => {
       "a fast brown fox",
       "quick fox jumps",
     ]);
+  });
+});
+
+describe("search result channel titles", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function stubYouTube(routes: Record<string, unknown>): void {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = new URL(url).pathname;
+        return new Response(JSON.stringify(routes[path] ?? { items: [] }), {
+          status: 200,
+        });
+      }),
+    );
+  }
+
+  it("carries each video's channel title from the details lookup", async () => {
+    stubYouTube({
+      "/youtube/v3/search": { items: [{ id: { videoId: "vid1" } }] },
+      "/youtube/v3/videos": {
+        items: [
+          {
+            id: "vid1",
+            snippet: {
+              title: "Some film",
+              description: "A film.",
+              publishedAt: "2026-10-01T00:00:00Z",
+              channelTitle: "Quantum Films",
+            },
+          },
+        ],
+      },
+    });
+    const result = await searchEverywhere({
+      quote: "anything",
+      variants: [],
+      apiKey: "test-key",
+      onProgress: () => {},
+    });
+    expect(result.shortlist[0]?.channelTitle).toBe("Quantum Films");
+  });
+
+  it("stamps uploads with the resolved channel title", async () => {
+    stubYouTube({
+      "/youtube/v3/channels": {
+        items: [
+          {
+            id: "UCchan1",
+            snippet: { title: "Test Channel" },
+            contentDetails: { relatedPlaylists: { uploads: "UUchan1" } },
+          },
+        ],
+      },
+      "/youtube/v3/playlistItems": {
+        items: [
+          {
+            snippet: {
+              title: "An upload",
+              description: "From the channel.",
+              publishedAt: "2026-10-01T00:00:00Z",
+              resourceId: { videoId: "vid9" },
+            },
+          },
+        ],
+      },
+      "/youtube/v3/search": { items: [] },
+      "/youtube/v3/videos": { items: [] },
+    });
+    const result = await searchChannel({
+      quote: "anything",
+      variants: [],
+      creator: "@tester",
+      sinceDays: 0,
+      apiKey: "test-key",
+      onProgress: () => {},
+    });
+    expect(result.shortlist.map((video) => video.id)).toEqual(["vid9"]);
+    expect(result.shortlist[0]?.channelTitle).toBe("Test Channel");
+  });
+});
+
+describe("listUploadsPage", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("returns one page and passes the page token through", async () => {
+    const seen: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        seen.push(url);
+        const pageToken = new URL(url).searchParams.get("pageToken");
+        return new Response(
+          JSON.stringify(
+            pageToken
+              ? {
+                  items: [
+                    {
+                      snippet: {
+                        title: "Second",
+                        description: "",
+                        publishedAt: "2026-10-02T00:00:00Z",
+                        resourceId: { videoId: "v2" },
+                      },
+                    },
+                  ],
+                }
+              : {
+                  nextPageToken: "tok123",
+                  items: [
+                    {
+                      snippet: {
+                        title: "First",
+                        description: "",
+                        publishedAt: "2026-10-01T00:00:00Z",
+                        resourceId: { videoId: "v1" },
+                      },
+                    },
+                  ],
+                },
+          ),
+          { status: 200 },
+        );
+      }),
+    );
+    const first = await listUploadsPage("UUx", "key");
+    expect(first.videos.map((video) => video.id)).toEqual(["v1"]);
+    expect(first.nextPageToken).toBe("tok123");
+    const second = await listUploadsPage("UUx", "key", first.nextPageToken);
+    expect(second.videos.map((video) => video.id)).toEqual(["v2"]);
+    expect(second.nextPageToken).toBeUndefined();
+    expect(seen[1]).toContain("pageToken=tok123");
   });
 });

@@ -1,6 +1,7 @@
 // Creator archive storage (SQLite via better-sqlite3). Holds connected
-// creators and their encrypted refresh tokens; videos and caption cues
-// arrive in A3. The database file stays out of git (see .gitignore).
+// creators and their encrypted refresh tokens, plus the daily API budget
+// counter. Videos and caption cues arrive in A3. The database file stays
+// out of git (see .gitignore).
 
 import Database from "better-sqlite3";
 
@@ -22,7 +23,17 @@ export interface ArchiveStore {
   getCreator(channelId: string): CreatorRow | undefined;
   listCreators(): CreatorRow[];
   deleteCreator(channelId: string): void;
+  getSpent(day: string): number;
+  trySpend(day: string, units: number, cap?: number): boolean;
   close(): void;
+}
+
+/** §4.3 daily indexing budget: 5,000 units, about 20 videos. */
+export const DAILY_BUDGET_UNITS = 5000;
+
+/** UTC calendar day key (`YYYY-MM-DD`) for the budget counter. */
+export function todayKey(now: Date = new Date()): string {
+  return now.toISOString().slice(0, 10);
 }
 
 const SCHEMA = `
@@ -32,6 +43,10 @@ CREATE TABLE IF NOT EXISTS creators (
   token_enc TEXT NOT NULL DEFAULT '',
   listed INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS budget (
+  day TEXT PRIMARY KEY,
+  spent INTEGER NOT NULL DEFAULT 0
 );
 `;
 
@@ -52,6 +67,22 @@ export function openArchiveStore(path: string): ArchiveStore {
     "SELECT channel_id, channel_title, token_enc, listed, created_at FROM creators ORDER BY created_at",
   );
   const deleteStmt = db.prepare("DELETE FROM creators WHERE channel_id = ?");
+  const spentStmt = db.prepare("SELECT spent FROM budget WHERE day = ?");
+  const upsertSpentStmt = db.prepare(`
+    INSERT INTO budget (day, spent) VALUES (@day, @spent)
+    ON CONFLICT(day) DO UPDATE SET spent = excluded.spent
+  `);
+  const trySpendTx = db.transaction(
+    (day: string, units: number, cap: number): boolean => {
+      const row = spentStmt.get(day) as { spent: number } | undefined;
+      const spent = row?.spent ?? 0;
+      if (spent + units > cap) {
+        return false;
+      }
+      upsertSpentStmt.run({ day, spent: spent + units });
+      return true;
+    },
+  );
 
   return {
     saveCreator(row) {
@@ -70,6 +101,13 @@ export function openArchiveStore(path: string): ArchiveStore {
     },
     deleteCreator(channelId) {
       deleteStmt.run(channelId);
+    },
+    getSpent(day) {
+      const row = spentStmt.get(day) as { spent: number } | undefined;
+      return row?.spent ?? 0;
+    },
+    trySpend(day, units, cap = DAILY_BUDGET_UNITS) {
+      return trySpendTx(day, units, cap);
     },
     close() {
       db.close();

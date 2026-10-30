@@ -8,6 +8,7 @@ export interface VideoMeta {
   title: string;
   publishedAt: string;
   description: string;
+  channelTitle: string;
 }
 
 export interface ScoredVideo {
@@ -120,6 +121,7 @@ interface VideosResponse {
       title?: string;
       description?: string;
       publishedAt?: string;
+      channelTitle?: string;
     };
   }>;
 }
@@ -181,29 +183,49 @@ export async function resolveChannel(
 
 // --- Upload index (§5.2): in-memory, one request, never persisted ---
 
+export interface UploadsPage {
+  videos: VideoMeta[];
+  nextPageToken?: string;
+}
+
+export async function listUploadsPage(
+  playlistId: string,
+  apiKey: string,
+  pageToken?: string,
+): Promise<UploadsPage> {
+  const data: unknown = await fetchYt(
+    `/playlistItems?part=snippet&maxResults=50&playlistId=${encodeURIComponent(playlistId)}&key=${encodeURIComponent(apiKey)}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`,
+  );
+  const page = data as PlaylistItemsResponse;
+  const videos: VideoMeta[] = [];
+  for (const item of page.items ?? []) {
+    const id = item.snippet?.resourceId?.videoId;
+    if (!id) {
+      continue;
+    }
+    videos.push({
+      id,
+      title: item.snippet?.title ?? "",
+      publishedAt: item.snippet?.publishedAt ?? "",
+      description: item.snippet?.description ?? "",
+      // Playlist items don't name the video's channel; callers stamp it.
+      channelTitle: "",
+    });
+  }
+  return { videos, nextPageToken: page.nextPageToken };
+}
+
 export async function listUploads(
   playlistId: string,
   apiKey: string,
   max = MAX_INDEX_VIDEOS,
 ): Promise<VideoMeta[]> {
   const videos: VideoMeta[] = [];
-  let pageToken = "";
+  let pageToken: string | undefined;
   while (videos.length < max) {
-    const data: unknown = await fetchYt(
-      `/playlistItems?part=snippet&maxResults=50&playlistId=${encodeURIComponent(playlistId)}&key=${encodeURIComponent(apiKey)}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`,
-    );
-    const page = data as PlaylistItemsResponse;
-    for (const item of page.items ?? []) {
-      const id = item.snippet?.resourceId?.videoId;
-      if (!id) {
-        continue;
-      }
-      videos.push({
-        id,
-        title: item.snippet?.title ?? "",
-        publishedAt: item.snippet?.publishedAt ?? "",
-        description: item.snippet?.description ?? "",
-      });
+    const page = await listUploadsPage(playlistId, apiKey, pageToken);
+    for (const video of page.videos) {
+      videos.push(video);
       if (videos.length >= max) {
         break;
       }
@@ -232,6 +254,7 @@ async function videosById(ids: string[], apiKey: string): Promise<VideoMeta[]> {
         title: item.snippet?.title ?? "",
         publishedAt: item.snippet?.publishedAt ?? "",
         description: item.snippet?.description ?? "",
+        channelTitle: item.snippet?.channelTitle ?? "",
       });
     }
   }
@@ -369,7 +392,9 @@ export async function searchChannel(
   let indexSize = 0;
   try {
     onProgress("Indexing uploads", header.channelTitle);
-    const index = await listUploads(header.uploadsPlaylistId, apiKey);
+    const index = (await listUploads(header.uploadsPlaylistId, apiKey)).map(
+      (video) => ({ ...video, channelTitle: header.channelTitle }),
+    );
     indexSize = index.length;
     const fresh = filterAfter(index, publishedAfter);
     ranked = fresh

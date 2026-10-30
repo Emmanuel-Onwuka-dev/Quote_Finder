@@ -86,3 +86,33 @@ describe("openArchiveStore", () => {
     }
   });
 });
+
+describe("daily budget", () => {
+  it("spends within the cap and pauses past it", () => {
+    const store = openMemory();
+    try {
+      expect(store.getSpent("2026-10-30")).toBe(0);
+      expect(store.trySpend("2026-10-30", 5001)).toBe(false);
+      expect(store.getSpent("2026-10-30")).toBe(0);
+      expect(store.trySpend("2026-10-30", 4900)).toBe(true);
+      expect(store.trySpend("2026-10-30", 200)).toBe(false);
+      expect(store.getSpent("2026-10-30")).toBe(4900);
+      expect(store.trySpend("2026-10-30", 100)).toBe(true);
+      expect(store.getSpent("2026-10-30")).toBe(5000);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("tracks each day separately", () => {
+    const store = openMemory();
+    try {
+      expect(store.trySpend("2026-10-30", 5000)).toBe(true);
+      expect(store.getSpent("2026-10-31")).toBe(0);
+      expect(store.trySpend("2026-10-31", 250)).toBe(true);
+      expect(store.getSpent("2026-10-30")).toBe(5000);
+    } finally {
+      store.close();
+    }
+  });
+});

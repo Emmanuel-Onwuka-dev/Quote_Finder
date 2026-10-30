@@ -1480,7 +1480,7 @@ describe("POST /listed", () => {
 });
 
 describe("channel sessions", () => {
-  const postAuthed = (
+  const postAuthed = async (
     app: Hono,
     path: string,
     body: unknown,
@@ -1495,7 +1495,7 @@ describe("channel sessions", () => {
       body: JSON.stringify(body),
     });
 
-  const getAuthed = (
+  const getAuthed = async (
     app: Hono,
     path: string,
     cookie?: string,

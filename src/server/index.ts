@@ -2,10 +2,13 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { existsSync } from "node:fs";
+import { createQuoteStreamHandler } from "./quote-stream";
 
 const app = new Hono();
 
 app.get("/api/health", (c) => c.json({ ok: true, service: "quotefinder" }));
+
+app.post("/api/quote-stream", createQuoteStreamHandler());
 
 // In production (`vite build` output present), serve the client bundle.
 if (existsSync("./dist/index.html")) {

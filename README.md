@@ -36,6 +36,9 @@ downloads.
   ranking, memory fallback with verified links (oEmbed/HEAD), found
   thresholds, medium confidence cap, and time-window handling, with mocked
   unit tests.
+- P3a: `POST /api/quote-stream` — zod body validation, `locateQuote`
+  progress streamed as SSE stages, `result`/`error` events, with endpoint
+  tests.
 
 ## External services and libraries
 

@@ -11,6 +11,12 @@ import { SSE_HEADERS, formatSseEvent } from "../quote-stream";
 import { decryptToken, encryptToken } from "./crypto";
 import { INDEX_PAUSED_MESSAGE, runIndexing } from "./indexing";
 import {
+  matchArchive,
+  noMatchResult,
+  toArchiveResult,
+  type ArchiveVideoCues,
+} from "./match";
+import {
   buildAuthUrl,
   codeChallenge,
   createCodeVerifier,
@@ -26,6 +32,7 @@ import {
   todayKey,
   videoFreshness,
   type ArchiveStore,
+  type MatchableVideo,
 } from "./store";
 
 export interface ArchiveDeps {
@@ -69,6 +76,42 @@ const IndexSchema = z.object({
   channelId: z.string().min(1),
   videoIds: z.array(z.string().min(1)).min(1).max(200),
 });
+
+const ListedSchema = z.object({
+  channelId: z.string().min(1),
+  listed: z.boolean(),
+});
+
+const SearchSchema = z.object({
+  channelId: z.string().min(1),
+  quote: z.string().trim().min(1),
+  variants: z.array(z.string().trim().min(1)).max(3).optional(),
+  sinceDays: z.number().int().min(0).max(3650).optional(),
+});
+
+/**
+ * On-miss ASR refreshes per search (§7.4 as approved). Bounded for
+ * interactive latency and quota: at most 3 videos (~750 units).
+ */
+const MAX_REFRESH_PER_SEARCH = 3;
+
+function inWindow(
+  publishedAt: string,
+  sinceDays: number,
+  now: Date,
+): boolean {
+  if (!sinceDays) {
+    return true;
+  }
+  if (!publishedAt) {
+    return true;
+  }
+  const published = Date.parse(publishedAt);
+  if (Number.isNaN(published)) {
+    return true;
+  }
+  return published >= now.getTime() - sinceDays * 24 * 60 * 60 * 1000;
+}
 
 export function createArchiveRoutes(deps: ArchiveDeps) {
   const app = new Hono();
@@ -197,6 +240,17 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
         spentUnits: store.getSpent(todayKey(now)),
         capUnits: DAILY_BUDGET_UNITS,
       },
+    });
+  });
+
+  app.get("/creators", (c) => {
+    const now = deps.now ?? new Date();
+    return c.json({
+      creators: store.listListedCreators().map((row) => ({
+        channelId: row.channel_id,
+        channelTitle: row.channel_title,
+        videoCount: store.countFreshVideos(row.channel_id, now),
+      })),
     });
   });
 
@@ -358,6 +412,138 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
       },
     });
     return new Response(stream, { headers: SSE_HEADERS });
+  });
+
+  app.post("/search", async (c) => {
+    let raw: unknown;
+    try {
+      raw = await c.req.json();
+    } catch {
+      return c.json({ message: "request body must be JSON" }, 400);
+    }
+    const parsed = SearchSchema.safeParse(raw);
+    if (!parsed.success) {
+      return c.json(
+        { message: "channelId and a non-empty quote are required" },
+        400,
+      );
+    }
+    const { channelId, quote } = parsed.data;
+    const variants = parsed.data.variants ?? [];
+    const sinceDays = parsed.data.sinceDays ?? 0;
+    const creator = store.getCreator(channelId);
+    if (!creator || creator.listed !== 1) {
+      return c.json(
+        { message: "channel is not available for search" },
+        404,
+      );
+    }
+    const now = deps.now ?? new Date();
+    const channelTitle = creator.channel_title;
+    const toCandidates = (videos: MatchableVideo[]): ArchiveVideoCues[] =>
+      videos
+        .filter((video) => inWindow(video.published_at, sinceDays, now))
+        .map((video) => ({
+          videoId: video.video_id,
+          title: video.title,
+          publishedAt: video.published_at,
+          channelTitle,
+          trackKind: video.track_kind,
+          cues: video.cues,
+        }));
+    const fresh = matchArchive(
+      toCandidates(store.getMatchableVideos(channelId, now)),
+      quote,
+      variants,
+    );
+    if (fresh) {
+      return c.json(toArchiveResult(fresh, [], false));
+    }
+    // On-miss ASR refresh (§7.4 as approved): re-download expired
+    // auto-generated captions so they can match. Expired standard
+    // captions stay out until the creator re-indexes them.
+    const stale = store
+      .getStaleAsrVideos(channelId, now)
+      .slice(0, MAX_REFRESH_PER_SEARCH);
+    if (stale.length === 0) {
+      return c.json(noMatchResult([], false));
+    }
+    let accessToken: string;
+    try {
+      const token = await accessTokenFor(channelId);
+      if (!token) {
+        return c.json({ message: "channel is not connected" }, 404);
+      }
+      accessToken = token;
+    } catch (error) {
+      return c.json(
+        {
+          message:
+            error instanceof Error
+              ? error.message
+              : "Could not refresh YouTube access",
+        },
+        502,
+      );
+    }
+    const run = await runIndexing({
+      videoIds: stale.map((video) => video.video_id),
+      accessToken,
+      store,
+      fetchFn,
+      now,
+    });
+    const metaById = new Map(
+      stale.map((video) => [video.video_id, video] as const),
+    );
+    for (const video of run.indexed) {
+      const meta = metaById.get(video.videoId);
+      if (!meta) {
+        continue;
+      }
+      store.saveVideoWithCues({
+        channelId,
+        videoId: video.videoId,
+        title: meta.title,
+        publishedAt: meta.published_at,
+        trackKind: video.trackKind,
+        fetchedAt: now.toISOString(),
+        cues: video.cues,
+      });
+    }
+    const refreshed = run.indexed.map((video) => video.videoId);
+    const retry = matchArchive(
+      toCandidates(store.getMatchableVideos(channelId, now)),
+      quote,
+      variants,
+    );
+    return c.json(
+      retry
+        ? toArchiveResult(retry, refreshed, run.paused)
+        : noMatchResult(refreshed, run.paused),
+    );
+  });
+
+  app.post("/listed", async (c) => {
+    let raw: unknown;
+    try {
+      raw = await c.req.json();
+    } catch {
+      return c.json({ message: "request body must be JSON" }, 400);
+    }
+    const parsed = ListedSchema.safeParse(raw);
+    if (!parsed.success) {
+      return c.json(
+        { message: "channelId and listed are required" },
+        400,
+      );
+    }
+    const row = store.getCreator(parsed.data.channelId);
+    if (!row) {
+      return c.json({ message: "channel is not connected" }, 404);
+    }
+    store.setListed(row.channel_id, parsed.data.listed);
+    return c.json({ ok: true, listed: parsed.data.listed });
   });
 
   app.post("/disconnect", async (c) => {

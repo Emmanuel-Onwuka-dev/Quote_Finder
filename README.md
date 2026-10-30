@@ -17,6 +17,11 @@ audio. It uses only official APIs (YouTube Data API v3), oEmbed, the YouTube
 embedded player, and Meta's models. No transcript fetching, no scrapers, no
 downloads.
 
+Known risk (creator archive, spec §7.6): YouTube's policy text does not
+address showing caption text from an authorized channel to other viewers.
+Captions are only read from channels whose creator connected and listed their
+archive, and only the matched lines are shown in results.
+
 ## Models and tools
 
 - Text (query variants, ranking, fallback): Muse Spark (`muse-spark-1.3`)
@@ -50,6 +55,9 @@ downloads.
   indexing UI with live progress.
 - A3: archive storage — videos/cues tables, purge of expired cue text,
   indexed states, real video counts, and transactional revoke-and-delete.
+- A4: caption-window matching — 3-to-6-cue windows scored with the shared
+  fuzzy overlap, ASR confidence cap, archive search endpoint with on-miss
+  ASR refresh, listed-creators scope, and the verified-timestamp result.
 
 ## External services and libraries
 

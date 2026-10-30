@@ -104,6 +104,23 @@ export function CreatorPage() {
     }
   };
 
+  const toggleListed = async (channelId: string, listed: boolean) => {
+    setNotice(null);
+    try {
+      const res = await fetch("/api/archive/listed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channelId, listed }),
+      });
+      if (!res.ok) {
+        throw new Error(`status ${res.status}`);
+      }
+      await load();
+    } catch {
+      setLoadError("Could not update the listing. Please try again.");
+    }
+  };
+
   const creators = status?.creators ?? null;
 
   return (
@@ -180,6 +197,17 @@ export function CreatorPage() {
                 <p className="mt-1 font-mono text-sm text-muted">
                   Indexed videos: {creator.videoCount}
                 </p>
+                <label className="mt-2 flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={creator.listed}
+                    onChange={(event) =>
+                      void toggleListed(creator.channelId, event.target.checked)
+                    }
+                    disabled={leaving}
+                  />
+                  <span>List my archive in viewer search</span>
+                </label>
                 <CreatorIndexing
                   channelId={creator.channelId}
                   onDone={load}

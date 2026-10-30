@@ -325,3 +325,187 @@ describe("purgeExpired", () => {
     }
   });
 });
+
+describe("getMatchableVideos", () => {
+  it("returns fresh videos with cues, newest first", () => {
+    const store = openMemory();
+    const now = new Date("2026-10-30T12:00:00Z");
+    try {
+      const base = {
+        channelId: "UCchan1",
+        fetchedAt: "2026-10-29T00:00:00Z",
+        trackKind: "standard",
+      };
+      store.saveVideoWithCues({
+        ...base,
+        videoId: "older",
+        title: "Older",
+        publishedAt: "2026-10-01T00:00:00Z",
+        cues: [cue(1, "older line")],
+      });
+      store.saveVideoWithCues({
+        ...base,
+        videoId: "newer",
+        title: "Newer",
+        publishedAt: "2026-10-20T00:00:00Z",
+        cues: [cue(2, "second"), cue(1, "first")],
+      });
+      store.saveVideoWithCues({
+        ...base,
+        videoId: "stale",
+        title: "Stale",
+        publishedAt: "2026-10-25T00:00:00Z",
+        fetchedAt: "2026-09-01T00:00:00Z",
+        cues: [cue(1)],
+      });
+      store.saveVideoWithCues({
+        ...base,
+        videoId: "empty",
+        title: "Empty",
+        publishedAt: "2026-10-26T00:00:00Z",
+        cues: [],
+      });
+      store.saveVideoWithCues({
+        ...base,
+        channelId: "UCother",
+        videoId: "theirs",
+        title: "Theirs",
+        publishedAt: "2026-10-27T00:00:00Z",
+        cues: [cue(1)],
+      });
+      expect(store.getMatchableVideos("UCchan1", now)).toEqual([
+        {
+          video_id: "newer",
+          title: "Newer",
+          published_at: "2026-10-20T00:00:00Z",
+          track_kind: "standard",
+          cues: [
+            {
+              idx: 1,
+              startSeconds: 1,
+              endSeconds: 2,
+              text: "first",
+            },
+            {
+              idx: 2,
+              startSeconds: 2,
+              endSeconds: 3,
+              text: "second",
+            },
+          ],
+        },
+        {
+          video_id: "older",
+          title: "Older",
+          published_at: "2026-10-01T00:00:00Z",
+          track_kind: "standard",
+          cues: [
+            {
+              idx: 1,
+              startSeconds: 1,
+              endSeconds: 2,
+              text: "older line",
+            },
+          ],
+        },
+      ]);
+      expect(store.getMatchableVideos("UCmissing", now)).toEqual([]);
+    } finally {
+      store.close();
+    }
+  });
+});
+
+describe("getStaleAsrVideos", () => {
+  it("returns expired asr videos only, newest first", () => {
+    const store = openMemory();
+    const now = new Date("2026-10-30T12:00:00Z");
+    try {
+      const base = { channelId: "UCchan1", title: "t", publishedAt: "" };
+      store.saveVideoWithCues({
+        ...base,
+        videoId: "stale-asr",
+        trackKind: "asr",
+        fetchedAt: "2026-09-01T00:00:00Z",
+        cues: [],
+      });
+      store.saveVideoWithCues({
+        ...base,
+        videoId: "stale-standard",
+        trackKind: "standard",
+        fetchedAt: "2026-09-01T00:00:00Z",
+        cues: [],
+      });
+      store.saveVideoWithCues({
+        ...base,
+        videoId: "fresh-asr",
+        title: "Fresh",
+        publishedAt: "2026-10-20T00:00:00Z",
+        trackKind: "asr",
+        fetchedAt: "2026-10-29T00:00:00Z",
+        cues: [cue(1)],
+      });
+      expect(store.getStaleAsrVideos("UCchan1", now)).toEqual([
+        {
+          video_id: "stale-asr",
+          title: "t",
+          published_at: "",
+          track_kind: "asr",
+        },
+      ]);
+    } finally {
+      store.close();
+    }
+  });
+});
+
+describe("listed creators", () => {
+  it("lists only channels the creator opted in", () => {
+    const store = openMemory();
+    try {
+      store.saveCreator({
+        channelId: "UCchan1",
+        channelTitle: "Listed",
+        tokenEnc: "iv:one",
+      });
+      store.saveCreator({
+        channelId: "UCchan2",
+        channelTitle: "Private",
+        tokenEnc: "iv:two",
+      });
+      expect(store.listListedCreators()).toEqual([]);
+      store.setListed("UCchan1", true);
+      expect(store.getCreator("UCchan1")).toMatchObject({ listed: 1 });
+      expect(store.listListedCreators()).toEqual([
+        { channel_id: "UCchan1", channel_title: "Listed" },
+      ]);
+      store.setListed("UCchan1", false);
+      expect(store.listListedCreators()).toEqual([]);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("reconnecting preserves the listing choice", () => {
+    const store = openMemory();
+    try {
+      store.saveCreator({
+        channelId: "UCchan1",
+        channelTitle: "Test Channel",
+        tokenEnc: "iv:old",
+      });
+      store.setListed("UCchan1", true);
+      store.saveCreator({
+        channelId: "UCchan1",
+        channelTitle: "Renamed",
+        tokenEnc: "iv:new",
+      });
+      expect(store.getCreator("UCchan1")).toMatchObject({
+        channel_title: "Renamed",
+        listed: 1,
+      });
+    } finally {
+      store.close();
+    }
+  });
+});

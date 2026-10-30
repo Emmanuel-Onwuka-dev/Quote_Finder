@@ -24,6 +24,26 @@ export interface StoredVideo {
   cue_count: number;
 }
 
+export interface MatchableVideo {
+  video_id: string;
+  title: string;
+  published_at: string;
+  track_kind: string;
+  cues: CaptionCue[];
+}
+
+export interface StaleVideo {
+  video_id: string;
+  title: string;
+  published_at: string;
+  track_kind: string;
+}
+
+export interface ListedCreator {
+  channel_id: string;
+  channel_title: string;
+}
+
 export type VideoFreshness = "fresh" | "expired" | "never";
 
 export interface ArchiveStore {
@@ -49,6 +69,13 @@ export interface ArchiveStore {
   getIndexedVideos(channelId: string): StoredVideo[];
   countFreshVideos(channelId: string, now: Date): number;
   purgeExpired(now: Date): number;
+  /** Fresh videos with their cues, newest first, for matching. */
+  getMatchableVideos(channelId: string, now: Date): MatchableVideo[];
+  /** Expired `asr` videos, newest first, for on-miss refresh (§7.4). */
+  getStaleAsrVideos(channelId: string, now: Date): StaleVideo[];
+  /** §7.5 "List my archive" — viewer search scope. Default off. */
+  setListed(channelId: string, listed: boolean): void;
+  listListedCreators(): ListedCreator[];
   close(): void;
 }
 
@@ -179,6 +206,27 @@ export function openArchiveStore(path: string): ArchiveStore {
       WHERE strftime('%s', fetched_at) <= strftime('%s', ?)
     )
   `);
+  const matchableStmt = db.prepare(`
+    SELECT v.video_id AS video_id, v.title AS title,
+           v.published_at AS published_at, v.track_kind AS track_kind,
+           c.idx AS idx, c.start_seconds AS start_seconds,
+           c.end_seconds AS end_seconds, c.text AS text
+    FROM videos v JOIN cues c ON c.video_id = v.video_id
+    WHERE v.channel_id = ? AND strftime('%s', v.fetched_at) > strftime('%s', ?)
+    ORDER BY v.published_at DESC, v.video_id ASC, c.idx ASC
+  `);
+  const staleAsrStmt = db.prepare(`
+    SELECT video_id, title, published_at, track_kind FROM videos
+    WHERE channel_id = ? AND track_kind = 'asr'
+      AND strftime('%s', fetched_at) <= strftime('%s', ?)
+    ORDER BY published_at DESC, video_id ASC
+  `);
+  const setListedStmt = db.prepare(
+    "UPDATE creators SET listed = ? WHERE channel_id = ?",
+  );
+  const listedStmt = db.prepare(
+    "SELECT channel_id, channel_title FROM creators WHERE listed = 1 ORDER BY created_at",
+  );
   const deleteChannelCuesStmt = db.prepare(`
     DELETE FROM cues WHERE video_id IN (
       SELECT video_id FROM videos WHERE channel_id = ?
@@ -271,6 +319,51 @@ export function openArchiveStore(path: string): ArchiveStore {
     },
     purgeExpired(now) {
       return purgeStmt.run(freshnessCutoff(now)).changes;
+    },
+    getMatchableVideos(channelId, now) {
+      const rows = matchableStmt.all(
+        channelId,
+        freshnessCutoff(now),
+      ) as Array<{
+        video_id: string;
+        title: string;
+        published_at: string;
+        track_kind: string;
+        idx: number;
+        start_seconds: number;
+        end_seconds: number;
+        text: string;
+      }>;
+      const videos: MatchableVideo[] = [];
+      for (const row of rows) {
+        let video = videos[videos.length - 1];
+        if (!video || video.video_id !== row.video_id) {
+          video = {
+            video_id: row.video_id,
+            title: row.title,
+            published_at: row.published_at,
+            track_kind: row.track_kind,
+            cues: [],
+          };
+          videos.push(video);
+        }
+        video.cues.push({
+          idx: row.idx,
+          startSeconds: row.start_seconds,
+          endSeconds: row.end_seconds,
+          text: row.text,
+        });
+      }
+      return videos;
+    },
+    getStaleAsrVideos(channelId, now) {
+      return staleAsrStmt.all(channelId, freshnessCutoff(now)) as StaleVideo[];
+    },
+    setListed(channelId, listed) {
+      setListedStmt.run(listed ? 1 : 0, channelId);
+    },
+    listListedCreators() {
+      return listedStmt.all() as ListedCreator[];
     },
     close() {
       db.close();

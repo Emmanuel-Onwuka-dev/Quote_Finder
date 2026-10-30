@@ -301,7 +301,7 @@ describe("search quota", () => {
     return { app, seen };
   }
 
-  function postQuote(app: Hono, body: unknown): Promise<Response> {
+  async function postQuote(app: Hono, body: unknown): Promise<Response> {
     return app.request("/api/quote-stream", {
       method: "POST",
       headers: { "content-type": "application/json" },

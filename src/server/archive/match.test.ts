@@ -194,11 +194,12 @@ describe("archive result envelopes", () => {
       text: "today we rebuild the carburetor from absolute scratch together",
       refreshed: ["old1"],
       refreshPaused: false,
+      notes: [],
     });
   });
 
   it("reports a miss with its refresh state", () => {
-    expect(noMatchResult([], true)).toEqual({
+    expect(noMatchResult([], true, ["budget spent"])).toEqual({
       found: false,
       confidence: null,
       creator: "",
@@ -212,6 +213,7 @@ describe("archive result envelopes", () => {
       text: "",
       refreshed: [],
       refreshPaused: true,
+      notes: ["budget spent"],
     });
   });
 });

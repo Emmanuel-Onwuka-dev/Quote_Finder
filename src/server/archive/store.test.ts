@@ -1,3 +1,7 @@
+import Database from "better-sqlite3";
+import { mkdtempSync, rmdirSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { openArchiveStore, videoFreshness } from "./store";
 
@@ -94,6 +98,9 @@ describe("openArchiveStore", () => {
         fetchedAt: "2026-10-30T00:00:00Z",
         cues: [cue(1)],
       });
+      const refreshAt = new Date("2026-10-30T12:00:00Z");
+      store.recordRefreshes("UCa", ["va"], refreshAt);
+      store.recordRefreshes("UCb", ["vb"], refreshAt);
       store.deleteChannel("UCa");
       expect(store.getCreator("UCa")).toBeUndefined();
       expect(store.getIndexedVideos("UCa")).toEqual([]);
@@ -101,6 +108,10 @@ describe("openArchiveStore", () => {
         "UCb",
       ]);
       expect(store.getIndexedVideos("UCb")).toHaveLength(1);
+      expect(store.lastChannelRefreshAt("UCa")).toBeNull();
+      expect(store.lastChannelRefreshAt("UCb")).toBe(
+        "2026-10-30T12:00:00.000Z",
+      );
     } finally {
       store.close();
     }
@@ -131,6 +142,93 @@ describe("daily budget", () => {
       expect(store.getSpent("2026-10-31")).toBe(0);
       expect(store.trySpend("2026-10-31", 250)).toBe(true);
       expect(store.getSpent("2026-10-30")).toBe(5000);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("tracks creator and viewer budgets separately", () => {
+    const store = openMemory();
+    try {
+      expect(store.trySpend("2026-10-30", 5000)).toBe(true);
+      expect(store.trySpend("2026-10-30", 1)).toBe(false);
+      expect(store.getSpent("2026-10-30", "viewer")).toBe(0);
+      expect(store.trySpend("2026-10-30", 1000, "viewer")).toBe(true);
+      expect(store.trySpend("2026-10-30", 1, "viewer")).toBe(false);
+      expect(store.getSpent("2026-10-30")).toBe(5000);
+      expect(store.getSpent("2026-10-30", "viewer")).toBe(1000);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("upgrades legacy day-only budget rows to creator rows", () => {
+    const dir = mkdtempSync(join(tmpdir(), "quotefinder-"));
+    const path = join(dir, "archive.db");
+    try {
+      const legacy = new Database(path);
+      legacy.exec(`
+        CREATE TABLE budget (day TEXT PRIMARY KEY, spent INTEGER NOT NULL DEFAULT 0);
+        INSERT INTO budget (day, spent) VALUES ('2026-10-30', 1500);
+      `);
+      legacy.close();
+      const store = openArchiveStore(path);
+      try {
+        expect(store.getSpent("2026-10-30")).toBe(1500);
+        expect(store.getSpent("2026-10-30", "viewer")).toBe(0);
+        expect(store.trySpend("2026-10-30", 100, "viewer")).toBe(true);
+      } finally {
+        store.close();
+      }
+      // Reopening a migrated database keeps both budgets intact.
+      const reopened = openArchiveStore(path);
+      try {
+        expect(reopened.getSpent("2026-10-30")).toBe(1500);
+        expect(reopened.getSpent("2026-10-30", "viewer")).toBe(100);
+      } finally {
+        reopened.close();
+      }
+    } finally {
+      unlinkSync(path);
+      rmdirSync(dir);
+    }
+  });
+});
+
+describe("viewer refresh tracking", () => {
+  it("records refreshes per channel and video", () => {
+    const store = openMemory();
+    const now = new Date("2026-10-30T12:00:00Z");
+    try {
+      expect(store.lastChannelRefreshAt("UCchan1")).toBeNull();
+      store.recordRefreshes("UCchan1", ["v1", "v2"], now);
+      expect(store.lastChannelRefreshAt("UCchan1")).toBe(
+        "2026-10-30T12:00:00.000Z",
+      );
+      expect(store.lastChannelRefreshAt("UCother")).toBeNull();
+      expect(
+        store
+          .recentlyRefreshedVideoIds("UCchan1", new Date("2026-10-29T12:00:00Z"))
+          .sort(),
+      ).toEqual(["v1", "v2"]);
+      expect(
+        store.recentlyRefreshedVideoIds("UCchan1", now),
+      ).toEqual([]);
+      const later = new Date("2026-10-31T12:00:00Z");
+      store.recordRefreshes("UCchan1", ["v1"], later);
+      expect(store.lastChannelRefreshAt("UCchan1")).toBe(
+        "2026-10-31T12:00:00.000Z",
+      );
+      expect(
+        store.recentlyRefreshedVideoIds(
+          "UCchan1",
+          new Date("2026-10-30T12:00:00Z"),
+        ),
+      ).toEqual(["v1"]);
+      store.recordRefreshes("UCchan1", [], later);
+      expect(store.lastChannelRefreshAt("UCchan1")).toBe(
+        "2026-10-31T12:00:00.000Z",
+      );
     } finally {
       store.close();
     }

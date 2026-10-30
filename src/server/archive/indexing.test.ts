@@ -182,6 +182,59 @@ describe("runIndexing", () => {
     expect(seen).toEqual([]);
   });
 
+  it("spends the viewer budget when asked, leaving creator spend alone", async () => {
+    const store = setup();
+    expect(store.trySpend("2026-10-30", 5000)).toBe(true);
+    const { fetchFn, seen } = scriptedFetch((href) => {
+      if (href.includes("/captions?")) {
+        return jsonResponse({
+          items: [
+            {
+              id: "t1",
+              snippet: {
+                language: "en",
+                trackKind: "standard",
+                status: "serving",
+              },
+            },
+          ],
+        });
+      }
+      return { ok: true, status: 200, text: async () => SRT } as Response;
+    });
+    const result = await runIndexing({
+      videoIds: ["vid1"],
+      accessToken: "at",
+      store,
+      fetchFn,
+      now: new Date("2026-10-30T12:00:00Z"),
+      budgetKind: "viewer",
+    });
+    expect(result.paused).toBe(false);
+    expect(result.indexed).toHaveLength(1);
+    expect(result.spentUnits).toBe(250);
+    expect(store.getSpent("2026-10-30", "viewer")).toBe(250);
+    expect(store.getSpent("2026-10-30")).toBe(5000);
+    expect(seen).toHaveLength(2);
+  });
+
+  it("pauses a viewer run once the viewer cap is hit", async () => {
+    const store = setup();
+    expect(store.trySpend("2026-10-30", 1000, "viewer")).toBe(true);
+    const { fetchFn, seen } = scriptedFetch(() => jsonResponse({}));
+    const result = await runIndexing({
+      videoIds: ["vid1"],
+      accessToken: "at",
+      store,
+      fetchFn,
+      now: new Date("2026-10-30T12:00:00Z"),
+      budgetKind: "viewer",
+    });
+    expect(result.paused).toBe(true);
+    expect(result.indexed).toEqual([]);
+    expect(seen).toEqual([]);
+  });
+
   it("pauses mid-run once the cap is hit", async () => {
     const store = setup();
     expect(store.trySpend("2026-10-30", 4900)).toBe(true);

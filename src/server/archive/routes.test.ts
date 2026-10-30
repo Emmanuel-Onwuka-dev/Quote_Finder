@@ -1083,6 +1083,7 @@ describe("POST /search", () => {
       text: "today we rebuild the carburetor from absolute scratch together",
       refreshed: [],
       refreshPaused: false,
+      notes: [],
     });
     expect(seen).toEqual([]);
   });
@@ -1127,6 +1128,7 @@ describe("POST /search", () => {
       text: "",
       refreshed: [],
       refreshPaused: false,
+      notes: [],
     });
     expect(seen).toEqual([]);
   });
@@ -1369,7 +1371,7 @@ describe("POST /search", () => {
       { now: SEARCH_NOW },
     );
     saveListedChannel(store);
-    expect(store.trySpend("2026-10-30", 5000)).toBe(true);
+    expect(store.trySpend("2026-10-30", 1000, "viewer")).toBe(true);
     store.saveVideoWithCues({
       channelId: "UCchan1",
       videoId: "oldvid",
@@ -1388,8 +1390,164 @@ describe("POST /search", () => {
       found: false,
       refreshed: [],
       refreshPaused: true,
+      notes: ["Viewer refresh budget spent — searched stored captions only."],
     });
     expect(seen.every((href) => href.includes("/token"))).toBe(true);
+  });
+});
+
+describe("search quotas", () => {
+  function seedStaleAsr(
+    store: ArchiveStore,
+    videoId: string,
+    publishedAt: string,
+  ): void {
+    store.saveVideoWithCues({
+      channelId: "UCchan1",
+      videoId,
+      title: videoId,
+      publishedAt,
+      trackKind: "asr",
+      fetchedAt: "2026-09-01T00:00:00Z",
+      cues: [],
+    });
+  }
+
+  it("allows one viewer-triggered refresh per channel per hour", async () => {
+    const { app, store, seen } = setup(
+      { srt: { status: 200, body: REFRESH_SRT } },
+      { now: SEARCH_NOW },
+    );
+    saveListedChannel(store);
+    for (const [videoId, publishedAt] of [
+      ["v1", "2026-09-10T00:00:00Z"],
+      ["v2", "2026-09-11T00:00:00Z"],
+      ["v3", "2026-09-12T00:00:00Z"],
+      ["v4", "2026-09-13T00:00:00Z"],
+    ] as const) {
+      seedStaleAsr(store, videoId, publishedAt);
+    }
+    const first = await postSearch(app, {
+      channelId: "UCchan1",
+      quote: SEARCH_QUOTE,
+    });
+    expect((await first.json()) as unknown).toMatchObject({
+      found: true,
+      refreshed: ["v4", "v3", "v2"],
+    });
+    const callsAfterFirst = seen.length;
+    const second = await postSearch(app, {
+      channelId: "UCchan1",
+      quote: "zebra elephant giraffe",
+    });
+    expect((await second.json()) as unknown).toMatchObject({
+      found: false,
+      refreshed: [],
+      refreshPaused: false,
+      notes: [],
+    });
+    expect(seen.length).toBe(callsAfterFirst);
+    expect(
+      store.getStaleAsrVideos("UCchan1", SEARCH_NOW).map((v) => v.video_id),
+    ).toEqual(["v1"]);
+  });
+
+  it("never re-downloads a video refreshed in the last 24 hours", async () => {
+    const { app, store, seen } = setup(
+      { srt: { status: 200, body: REFRESH_SRT } },
+      { now: SEARCH_NOW },
+    );
+    saveListedChannel(store);
+    seedStaleAsr(store, "v1", "2026-09-10T00:00:00Z");
+    // Two hours ago: outside the hourly gate, inside the 24-hour rule.
+    store.recordRefreshes(
+      "UCchan1",
+      ["v1"],
+      new Date(SEARCH_NOW.getTime() - 2 * 60 * 60 * 1000),
+    );
+    const res = await postSearch(app, {
+      channelId: "UCchan1",
+      quote: SEARCH_QUOTE,
+    });
+    expect((await res.json()) as unknown).toMatchObject({
+      found: false,
+      refreshed: [],
+    });
+    expect(seen).toEqual([]);
+  });
+
+  it("rate-limits archive search per client", async () => {
+    const { app, store } = setup({}, { now: SEARCH_NOW });
+    saveListedChannel(store);
+    saveFreshVideo(store, {
+      videoId: "garden",
+      title: "Garden walk",
+      cues: GARDEN_CUES,
+    });
+    for (let i = 0; i < 5; i += 1) {
+      const res = await postSearch(app, {
+        channelId: "UCchan1",
+        quote: "zebra elephant giraffe",
+      });
+      expect(res.status).toBe(200);
+    }
+    const limited = await postSearch(app, {
+      channelId: "UCchan1",
+      quote: "zebra elephant giraffe",
+    });
+    expect(limited.status).toBe(429);
+    expect(await limited.json()).toEqual({
+      message: "too many archive searches — try again in a minute",
+    });
+    expect(limited.headers.get("Retry-After")).toMatch(/^\d+$/);
+  });
+
+  it("never lets a spent viewer budget block creator indexing", async () => {
+    const { app, store } = setup();
+    saveConnectedChannel(store);
+    expect(store.trySpend(todayKey(), 1000, "viewer")).toBe(true);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const parsed = new URL(url);
+        if (parsed.pathname === "/youtube/v3/videos") {
+          return jsonResponse({
+            items: [
+              {
+                id: "vid1",
+                snippet: {
+                  title: "Vid one",
+                  description: "",
+                  publishedAt: "2026-10-01T00:00:00Z",
+                  channelTitle: "Test Channel",
+                },
+              },
+            ],
+          });
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      }),
+    );
+    const res = await app.request("/api/archive/index", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: sessionCookie("UCchan1"),
+      },
+      body: JSON.stringify({ channelId: "UCchan1", videoIds: ["vid1"] }),
+    });
+    expect(res.status).toBe(200);
+    const events = parseSseEvents(await res.text());
+    const kinds = events.map((event) => event.event);
+    expect(kinds[kinds.length - 1]).toBe("result");
+    const result = JSON.parse(events[events.length - 1]?.data ?? "{}") as {
+      indexed: unknown[];
+      paused: boolean;
+    };
+    expect(result.paused).toBe(false);
+    expect(result.indexed).toHaveLength(1);
+    expect(store.getSpent(todayKey(), "creator")).toBe(250);
+    expect(store.getSpent(todayKey(), "viewer")).toBe(1000);
   });
 });
 

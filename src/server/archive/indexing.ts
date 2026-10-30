@@ -12,7 +12,7 @@ import {
 } from "./captions";
 import type { ProgressFn } from "../youtube";
 import { parseSrt, type CaptionCue } from "./srt";
-import { todayKey, type ArchiveStore } from "./store";
+import { todayKey, type ArchiveStore, type BudgetKind } from "./store";
 
 export interface IndexedVideo {
   videoId: string;
@@ -31,7 +31,7 @@ export interface IndexRunResult {
   indexed: IndexedVideo[];
   skipped: SkippedVideo[];
   paused: boolean;
-  /** Total units spent today, including this run. */
+  /** Units spent today on this run's budget, including this run. */
   spentUnits: number;
 }
 
@@ -42,6 +42,8 @@ export interface IndexRunInput {
   fetchFn?: typeof fetch;
   onProgress?: ProgressFn;
   now?: Date;
+  /** Which daily budget to spend; creator indexing by default. */
+  budgetKind?: BudgetKind;
 }
 
 /** §4.3 message shown when the daily budget stops a run. */
@@ -54,6 +56,7 @@ export async function runIndexing(
   const fetchFn = input.fetchFn ?? fetch;
   const onProgress: ProgressFn = input.onProgress ?? (() => {});
   const day = todayKey(input.now ?? new Date());
+  const budgetKind = input.budgetKind ?? "creator";
   const indexed: IndexedVideo[] = [];
   const skipped: SkippedVideo[] = [];
   let paused = false;
@@ -65,7 +68,7 @@ export async function runIndexing(
     }
     const label = `video ${videoId} (${position + 1} of ${videoIds.length})`;
     onProgress("Indexing videos", label);
-    if (!store.trySpend(day, CAPTIONS_LIST_COST)) {
+    if (!store.trySpend(day, CAPTIONS_LIST_COST, budgetKind)) {
       paused = true;
       break;
     }
@@ -83,7 +86,7 @@ export async function runIndexing(
       onProgress("Indexing videos", `${label} — skipped`);
       continue;
     }
-    if (!store.trySpend(day, CAPTIONS_DOWNLOAD_COST)) {
+    if (!store.trySpend(day, CAPTIONS_DOWNLOAD_COST, budgetKind)) {
       paused = true;
       break;
     }
@@ -110,7 +113,12 @@ export async function runIndexing(
     }
   }
 
-  return { indexed, skipped, paused, spentUnits: store.getSpent(day) };
+  return {
+    indexed,
+    skipped,
+    paused,
+    spentUnits: store.getSpent(day, budgetKind),
+  };
 }
 
 function describe(error: unknown): string {

@@ -59,6 +59,17 @@ const PENDING_TTL_MS = 10 * 60 * 1000;
  * cap, hits on /oauth/start grow the pending map without bound. */
 const MAX_PENDING_OAUTH = 100;
 
+/** Archive search rate limit: 5 searches per minute per client IP. */
+const SEARCH_LIMIT = 5;
+const SEARCH_WINDOW_MS = 60 * 1000;
+/** At most one viewer-triggered refresh per channel per hour. */
+const REFRESH_CHANNEL_MS = 60 * 60 * 1000;
+/** Never re-download a video refreshed in the last 24 hours. */
+const REFRESH_VIDEO_MS = 24 * 60 * 60 * 1000;
+/** Result note when the viewer budget is spent. */
+const VIEWER_BUDGET_SPENT_NOTE =
+  "Viewer refresh budget spent — searched stored captions only.";
+
 /**
  * Where to send the browser after OAuth: the origin that started the flow
  * (the client page), so dev (split ports) and prod (single origin) both
@@ -131,6 +142,7 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
     string,
     { verifier: string; returnBase: string | null; createdAt: number }
   >();
+  const searchHits = new Map<string, number[]>();
 
   function prunePending(now: number): void {
     for (const [state, session] of pending) {
@@ -158,6 +170,36 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
 
   function channelsOf(cookieValue: string | undefined): string[] {
     return verifySession(cookieValue, nowMs(), deps.archiveTokenKey) ?? [];
+  }
+
+  /** Sliding-window search limiter. Buckets are pruned on every check
+   * so idle IPs drop out of the map. */
+  function checkSearchRate(
+    ip: string,
+    nowMs: number,
+  ): { allowed: true } | { allowed: false; retryAfter: number } {
+    const cutoff = nowMs - SEARCH_WINDOW_MS;
+    for (const [key, hits] of searchHits) {
+      const fresh = hits.filter((at) => at > cutoff);
+      if (fresh.length === 0) {
+        searchHits.delete(key);
+      } else {
+        searchHits.set(key, fresh);
+      }
+    }
+    const hits = searchHits.get(ip) ?? [];
+    if (hits.length >= SEARCH_LIMIT) {
+      const oldest = hits[0] ?? nowMs;
+      return {
+        allowed: false,
+        retryAfter: Math.max(
+          1,
+          Math.ceil((oldest + SEARCH_WINDOW_MS - nowMs) / 1000),
+        ),
+      };
+    }
+    searchHits.set(ip, [...hits, nowMs]);
+    return { allowed: true };
   }
 
   /** Null on a match; otherwise the 401 (session missing, invalid, or
@@ -483,6 +525,23 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
   });
 
   app.post("/search", async (c) => {
+    // Socket address, never a client-supplied header: those are trivially
+    // spoofed, and this server takes direct connections. No env in the
+    // test client, so fall back to a shared bucket there.
+    const env = (c.env ?? {}) as {
+      incoming?: { socket?: { remoteAddress?: string } };
+    };
+    const rate = checkSearchRate(
+      env.incoming?.socket?.remoteAddress ?? "unknown",
+      Date.now(),
+    );
+    if (!rate.allowed) {
+      c.header("Retry-After", String(rate.retryAfter));
+      return c.json(
+        { message: "too many archive searches — try again in a minute" },
+        429,
+      );
+    }
     let raw: unknown;
     try {
       raw = await c.req.json();
@@ -529,10 +588,25 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
     }
     // On-miss ASR refresh (§7.4 as approved): re-download expired
     // auto-generated captions so they can match. Expired standard
-    // captions stay out until the creator re-indexes them.
-    const stale = store
-      .getStaleAsrVideos(channelId, now)
-      .slice(0, MAX_REFRESH_PER_SEARCH);
+    // captions stay out until the creator re-indexes them. At most one
+    // refresh per channel per hour, and never a video refreshed in the
+    // last 24 hours — both tracked in the database.
+    const lastRefresh = store.lastChannelRefreshAt(channelId);
+    const refreshedRecently =
+      lastRefresh !== null &&
+      Date.parse(lastRefresh) > now.getTime() - REFRESH_CHANNEL_MS;
+    const exclude = new Set(
+      store.recentlyRefreshedVideoIds(
+        channelId,
+        new Date(now.getTime() - REFRESH_VIDEO_MS),
+      ),
+    );
+    const stale = refreshedRecently
+      ? []
+      : store
+          .getStaleAsrVideos(channelId, now)
+          .filter((video) => !exclude.has(video.video_id))
+          .slice(0, MAX_REFRESH_PER_SEARCH);
     if (stale.length === 0) {
       return c.json(noMatchResult([], false));
     }
@@ -560,6 +634,7 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
       store,
       fetchFn,
       now,
+      budgetKind: "viewer",
     });
     const metaById = new Map(
       stale.map((video) => [video.video_id, video] as const),
@@ -580,6 +655,8 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
       });
     }
     const refreshed = run.indexed.map((video) => video.videoId);
+    store.recordRefreshes(channelId, refreshed, now);
+    const notes = run.paused ? [VIEWER_BUDGET_SPENT_NOTE] : [];
     const retry = matchArchive(
       toCandidates(store.getMatchableVideos(channelId, now)),
       quote,
@@ -587,8 +664,8 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
     );
     return c.json(
       retry
-        ? toArchiveResult(retry, refreshed, run.paused)
-        : noMatchResult(refreshed, run.paused),
+        ? toArchiveResult(retry, refreshed, run.paused, notes)
+        : noMatchResult(refreshed, run.paused, notes),
     );
   });
 

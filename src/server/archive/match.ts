@@ -60,6 +60,8 @@ export interface ArchiveSearchResult {
   text: string;
   refreshed: string[];
   refreshPaused: boolean;
+  /** Human-readable notes, e.g. why a refresh was skipped. */
+  notes: string[];
 }
 
 /** §5.3: `forced` counts as `standard`; only `asr` is labelled and
@@ -213,6 +215,7 @@ export function toArchiveResult(
   match: ArchiveMatch,
   refreshed: string[],
   refreshPaused: boolean,
+  notes: string[] = [],
 ): ArchiveSearchResult {
   return {
     found: true,
@@ -228,12 +231,14 @@ export function toArchiveResult(
     text: match.text,
     refreshed,
     refreshPaused,
+    notes,
   };
 }
 
 export function noMatchResult(
   refreshed: string[],
   refreshPaused: boolean,
+  notes: string[] = [],
 ): ArchiveSearchResult {
   return {
     found: false,
@@ -249,5 +254,6 @@ export function noMatchResult(
     text: "",
     refreshed,
     refreshPaused,
+    notes,
   };
 }

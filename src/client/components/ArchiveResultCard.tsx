@@ -22,6 +22,7 @@ export interface ArchiveSearchResult {
   text: string;
   refreshed: string[];
   refreshPaused: boolean;
+  notes: string[];
 }
 
 interface ArchiveResultCardProps {

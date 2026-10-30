@@ -978,7 +978,7 @@ function saveListedChannel(store: ArchiveStore): void {
   store.setListed("UCchan1", true);
 }
 
-function postSearch(app: Hono, body: unknown): Promise<Response> {
+async function postSearch(app: Hono, body: unknown): Promise<Response> {
   return app.request("/api/archive/search", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

@@ -128,3 +128,28 @@ export async function revokeToken(
     throw new Error(`Google token revoke failed (${res.status})`);
   }
 }
+
+export async function refreshAccessToken(
+  args: { refreshToken: string; clientId: string; clientSecret: string },
+  fetchFn: typeof fetch = fetch,
+): Promise<string> {
+  const res = await fetchFn(GOOGLE_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: args.refreshToken,
+      client_id: args.clientId,
+      client_secret: args.clientSecret,
+    }).toString(),
+    signal: AbortSignal.timeout(OAUTH_TIMEOUT_MS),
+  });
+  if (!res.ok) {
+    throw new Error(`Google token refresh failed (${res.status})`);
+  }
+  const data = (await res.json()) as TokenPayload;
+  if (!data.access_token) {
+    throw new Error("Google did not return an access token");
+  }
+  return data.access_token;
+}

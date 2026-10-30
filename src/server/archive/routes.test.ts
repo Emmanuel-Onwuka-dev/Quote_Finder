@@ -1,10 +1,11 @@
 import { Hono } from "hono";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { decryptToken, encryptToken } from "./crypto";
 import { createArchiveRoutes, type ArchiveDeps } from "./routes";
-import { openArchiveStore, type ArchiveStore } from "./store";
+import { openArchiveStore, todayKey, type ArchiveStore } from "./store";
 
 const TEST_KEY = "ab".repeat(32);
+const SRT = "1\n00:00:01,000 --> 00:00:02,000\nHello there\n";
 
 function jsonResponse(data: unknown, status = 200): Response {
   return {
@@ -18,6 +19,8 @@ interface GoogleScript {
   token?: { status: number; body: unknown };
   channels?: { status: number; body: unknown };
   revoke?: { status: number };
+  tracks?: { status: number; body: unknown };
+  srt?: { status: number; body: string };
 }
 
 function makeGoogleFetch(script: GoogleScript, seen: string[]) {
@@ -37,15 +40,42 @@ function makeGoogleFetch(script: GoogleScript, seen: string[]) {
         return jsonResponse({}, script.revoke?.status ?? 200);
       }
     }
-    if (
-      parsed.hostname === "www.googleapis.com" &&
-      parsed.pathname === "/youtube/v3/channels"
-    ) {
-      const step = script.channels ?? {
-        status: 200,
-        body: { items: [{ id: "UCchan1", snippet: { title: "Test Channel" } }] },
-      };
-      return jsonResponse(step.body, step.status);
+    if (parsed.hostname === "www.googleapis.com") {
+      if (parsed.pathname === "/youtube/v3/captions") {
+        const step = script.tracks ?? {
+          status: 200,
+          body: {
+            items: [
+              {
+                id: "t1",
+                snippet: {
+                  language: "en",
+                  trackKind: "standard",
+                  status: "serving",
+                },
+              },
+            ],
+          },
+        };
+        return jsonResponse(step.body, step.status);
+      }
+      if (parsed.pathname.startsWith("/youtube/v3/captions/")) {
+        const step = script.srt ?? { status: 200, body: SRT };
+        return {
+          ok: step.status >= 200 && step.status < 300,
+          status: step.status,
+          text: async () => step.body,
+        } as Response;
+      }
+      if (parsed.pathname === "/youtube/v3/channels") {
+        const step = script.channels ?? {
+          status: 200,
+          body: {
+            items: [{ id: "UCchan1", snippet: { title: "Test Channel" } }],
+          },
+        };
+        return jsonResponse(step.body, step.status);
+      }
     }
     throw new Error(`unexpected fetch: ${href}`);
   }) as unknown as typeof fetch;
@@ -57,6 +87,7 @@ afterEach(() => {
   for (const store of stores.splice(0)) {
     store.close();
   }
+  vi.unstubAllGlobals();
 });
 
 function setup(
@@ -74,12 +105,21 @@ function setup(
       googleClientSecret: "csecret",
       googleRedirectUri: "http://localhost:8787/api/archive/oauth/callback",
       archiveTokenKey: TEST_KEY,
+      youtubeApiKey: "yt-key",
       store,
       fetchFn: makeGoogleFetch(script, seen),
       ...overrides,
     }),
   );
   return { app, store, seen };
+}
+
+function saveConnectedChannel(store: ArchiveStore): void {
+  store.saveCreator({
+    channelId: "UCchan1",
+    channelTitle: "Test Channel",
+    tokenEnc: encryptToken("rt", TEST_KEY),
+  });
 }
 
 async function startFlow(app: Hono): Promise<{ state: string; cookie: string }> {
@@ -91,6 +131,27 @@ async function startFlow(app: Hono): Promise<{ state: string; cookie: string }> 
   expect(state).not.toBe("");
   expect(cookie).toContain("archive_oauth_state=");
   return { state, cookie };
+}
+
+function parseSseEvents(
+  text: string,
+): Array<{ event: string; data: string }> {
+  return text
+    .split("\n\n")
+    .filter((block) => block.includes("event:"))
+    .map((block) => {
+      const lines = block.split("\n");
+      const event =
+        lines
+          .find((line) => line.startsWith("event:"))
+          ?.slice("event:".length)
+          .trim() ?? "";
+      const data = lines
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice("data:".length).trim())
+        .join("\n");
+      return { event, data };
+    });
 }
 
 describe("GET /oauth/start", () => {
@@ -206,7 +267,10 @@ describe("GET /status", () => {
     const { app } = setup();
     const res = await app.request("/api/archive/status");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ creators: [] });
+    expect(await res.json()).toEqual({
+      creators: [],
+      budget: { spentUnits: 0, capUnits: 5000 },
+    });
   });
 
   it("reports the connected channel without any secret", async () => {
@@ -226,6 +290,17 @@ describe("GET /status", () => {
           listed: false,
         },
       ],
+      budget: { spentUnits: 0, capUnits: 5000 },
+    });
+  });
+
+  it("reports today's budget spend", async () => {
+    const { app, store } = setup();
+    expect(store.trySpend(todayKey(), 300)).toBe(true);
+    const res = await app.request("/api/archive/status");
+    expect(await res.json()).toEqual({
+      creators: [],
+      budget: { spentUnits: 300, capUnits: 5000 },
     });
   });
 });
@@ -250,6 +325,7 @@ describe("POST /disconnect", () => {
         googleClientSecret: "csecret",
         googleRedirectUri: "http://localhost:8787/api/archive/oauth/callback",
         archiveTokenKey: TEST_KEY,
+        youtubeApiKey: "yt-key",
         store,
         fetchFn: (async (url: string | URL | Request, init?: RequestInit) => {
           seen.push(String(url));
@@ -378,5 +454,241 @@ describe("client-origin redirects", () => {
     );
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/creator?connected=1");
+  });
+});
+
+describe("GET /videos", () => {
+  function stubUploads(seen: string[]): void {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        seen.push(url);
+        const parsed = new URL(url);
+        // The fixture id is short, so channel resolution takes the
+        // free-text path; real 24-char ids go straight to /channels.
+        if (parsed.pathname === "/youtube/v3/search") {
+          return jsonResponse({ items: [{ id: { channelId: "UCchan1" } }] });
+        }
+        if (parsed.pathname === "/youtube/v3/channels") {
+          return jsonResponse({
+            items: [
+              {
+                id: "UCchan1",
+                snippet: { title: "Test Channel" },
+                contentDetails: { relatedPlaylists: { uploads: "UUchan1" } },
+              },
+            ],
+          });
+        }
+        if (parsed.pathname === "/youtube/v3/playlistItems") {
+          const pageToken = parsed.searchParams.get("pageToken");
+          return jsonResponse(
+            pageToken
+              ? {
+                  items: [
+                    {
+                      snippet: {
+                        title: "Second",
+                        description: "",
+                        publishedAt: "2026-10-02T00:00:00Z",
+                        resourceId: { videoId: "v2" },
+                      },
+                    },
+                  ],
+                }
+              : {
+                  nextPageToken: "tok123",
+                  items: [
+                    {
+                      snippet: {
+                        title: "First",
+                        description: "",
+                        publishedAt: "2026-10-01T00:00:00Z",
+                        resourceId: { videoId: "v1" },
+                      },
+                    },
+                  ],
+                },
+          );
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      }),
+    );
+  }
+
+  it("lists the channel's uploads for a connected channel", async () => {
+    const { app, store } = setup();
+    saveConnectedChannel(store);
+    stubUploads([]);
+    const res = await app.request("/api/archive/videos?channelId=UCchan1");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      videos: [
+        { id: "v1", title: "First", publishedAt: "2026-10-01T00:00:00Z" },
+      ],
+      nextPageToken: "tok123",
+    });
+  });
+
+  it("passes the page token through", async () => {
+    const { app, store } = setup();
+    saveConnectedChannel(store);
+    const seen: string[] = [];
+    stubUploads(seen);
+    const res = await app.request(
+      "/api/archive/videos?channelId=UCchan1&pageToken=tok123",
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      videos: [
+        { id: "v2", title: "Second", publishedAt: "2026-10-02T00:00:00Z" },
+      ],
+    });
+    expect(seen.some((href) => href.includes("pageToken=tok123"))).toBe(true);
+  });
+
+  it("returns 404 for a channel that is not connected", async () => {
+    const { app } = setup();
+    const res = await app.request("/api/archive/videos?channelId=UCmissing");
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ message: "channel is not connected" });
+  });
+
+  it("requires a channelId", async () => {
+    const { app } = setup();
+    const res = await app.request("/api/archive/videos");
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 502 when the YouTube call fails", async () => {
+    const { app, store } = setup();
+    saveConnectedChannel(store);
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({}, 500)));
+    const res = await app.request("/api/archive/videos?channelId=UCchan1");
+    expect(res.status).toBe(502);
+  });
+});
+
+describe("POST /index", () => {
+  function postIndex(app: Hono, body: unknown): Promise<Response> {
+    return app.request("/api/archive/index", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: typeof body === "string" ? body : JSON.stringify(body),
+    });
+  }
+
+  it("streams progress then a result summary", async () => {
+    const { app, store, seen } = setup();
+    saveConnectedChannel(store);
+    const res = await postIndex(app, {
+      channelId: "UCchan1",
+      videoIds: ["vid1"],
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+    const events = parseSseEvents(await res.text());
+    const kinds = events.map((event) => event.event);
+    expect(kinds[0]).toBe("progress");
+    expect(kinds[kinds.length - 1]).toBe("result");
+    const result = JSON.parse(events[kinds.length - 1]?.data ?? "{}") as {
+      indexed: unknown[];
+      skipped: unknown[];
+      paused: boolean;
+      message: string;
+      spentUnits: number;
+    };
+    expect(result).toEqual({
+      indexed: [
+        {
+          videoId: "vid1",
+          trackKind: "standard",
+          language: "en",
+          cueCount: 1,
+        },
+      ],
+      skipped: [],
+      paused: false,
+      message: "",
+      spentUnits: 250,
+    });
+    expect(seen.some((href) => href.includes("oauth2.googleapis.com/token"))).toBe(
+      true,
+    );
+  });
+
+  it("pauses with the spec message when the budget is spent", async () => {
+    const now = new Date("2026-10-30T12:00:00Z");
+    const { app, store, seen } = setup({}, { now });
+    saveConnectedChannel(store);
+    expect(store.trySpend("2026-10-30", 5000)).toBe(true);
+    const res = await postIndex(app, {
+      channelId: "UCchan1",
+      videoIds: ["vid1"],
+    });
+    const events = parseSseEvents(await res.text());
+    const result = JSON.parse(events[events.length - 1]?.data ?? "{}") as {
+      paused: boolean;
+      message: string;
+      indexed: unknown[];
+    };
+    expect(result.paused).toBe(true);
+    expect(result.message).toBe("Indexing paused until tomorrow");
+    expect(result.indexed).toEqual([]);
+    // Only the pre-stream token refresh ran; no captions calls.
+    expect(seen.every((href) => href.includes("/token"))).toBe(true);
+  });
+
+  it("reports skipped videos in the result", async () => {
+    const { app, store } = setup({
+      tracks: { status: 200, body: { items: [] } },
+    });
+    saveConnectedChannel(store);
+    const res = await postIndex(app, {
+      channelId: "UCchan1",
+      videoIds: ["bare"],
+    });
+    const events = parseSseEvents(await res.text());
+    const result = JSON.parse(events[events.length - 1]?.data ?? "{}") as {
+      indexed: unknown[];
+      skipped: unknown[];
+      paused: boolean;
+    };
+    expect(result.indexed).toEqual([]);
+    expect(result.skipped).toEqual([
+      { videoId: "bare", reason: "no usable caption track" },
+    ]);
+    expect(result.paused).toBe(false);
+  });
+
+  it("rejects invalid bodies with a 400", async () => {
+    const { app } = setup();
+    expect((await postIndex(app, "not json{")).status).toBe(400);
+    expect((await postIndex(app, {})).status).toBe(400);
+    expect(
+      (await postIndex(app, { channelId: "UCchan1", videoIds: [] })).status,
+    ).toBe(400);
+    expect(
+      (await postIndex(app, { channelId: "", videoIds: ["v1"] })).status,
+    ).toBe(400);
+  });
+
+  it("returns 404 for a channel that is not connected", async () => {
+    const { app } = setup();
+    const res = await postIndex(app, {
+      channelId: "UCmissing",
+      videoIds: ["v1"],
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 502 when the token refresh fails", async () => {
+    const { app, store } = setup({ token: { status: 400, body: {} } });
+    saveConnectedChannel(store);
+    const res = await postIndex(app, {
+      channelId: "UCchan1",
+      videoIds: ["v1"],
+    });
+    expect(res.status).toBe(502);
   });
 });

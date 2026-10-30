@@ -21,6 +21,7 @@ app.route(
     googleRedirectUri: archiveConfig.googleRedirectUri,
     archiveTokenKey: archiveConfig.archiveTokenKey,
     archiveDbPath: archiveConfig.archiveDbPath,
+    youtubeApiKey: archiveConfig.youtubeApiKey,
   }),
 );
 

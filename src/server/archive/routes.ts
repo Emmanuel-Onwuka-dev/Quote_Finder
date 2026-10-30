@@ -1,11 +1,15 @@
-// Creator archive HTTP routes (§4.1, §4.4): OAuth connect, status, and
-// disconnect. Mounted at /api/archive. Secrets never leave the server:
-// the browser sees channel titles and counts only.
+// Creator archive HTTP routes (§4.1, §4.2, §4.4): OAuth connect, status,
+// upload listing, caption indexing, and disconnect. Mounted at
+// /api/archive. Secrets never leave the server: the browser sees channel
+// titles and counts only.
 
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
+import { listUploadsPage, resolveChannel } from "../youtube";
+import { SSE_HEADERS, formatSseEvent } from "../quote-stream";
 import { decryptToken, encryptToken } from "./crypto";
+import { INDEX_PAUSED_MESSAGE, runIndexing } from "./indexing";
 import {
   buildAuthUrl,
   codeChallenge,
@@ -13,18 +17,26 @@ import {
   createState,
   exchangeCode,
   fetchOwnChannel,
+  refreshAccessToken,
   revokeToken,
 } from "./oauth";
-import { openArchiveStore, type ArchiveStore } from "./store";
+import {
+  DAILY_BUDGET_UNITS,
+  openArchiveStore,
+  todayKey,
+  type ArchiveStore,
+} from "./store";
 
 export interface ArchiveDeps {
   googleClientId: string;
   googleClientSecret: string;
   googleRedirectUri: string;
   archiveTokenKey: string;
+  youtubeApiKey: string;
   archiveDbPath?: string;
   store?: ArchiveStore;
   fetchFn?: typeof fetch;
+  now?: Date;
 }
 
 const STATE_COOKIE = "archive_oauth_state";
@@ -52,6 +64,11 @@ function returnBaseFromReferer(referer: string | undefined): string | null {
 
 const DisconnectSchema = z.object({ channelId: z.string().min(1) });
 
+const IndexSchema = z.object({
+  channelId: z.string().min(1),
+  videoIds: z.array(z.string().min(1)).min(1).max(200),
+});
+
 export function createArchiveRoutes(deps: ArchiveDeps) {
   const app = new Hono();
   const store =
@@ -73,6 +90,23 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
   function configured(): boolean {
     return Boolean(
       deps.googleClientId && deps.googleClientSecret && deps.googleRedirectUri,
+    );
+  }
+
+  // Null when the channel is not connected; throws when its token is
+  // missing or Google refuses the refresh.
+  async function accessTokenFor(channelId: string): Promise<string | null> {
+    const row = store.getCreator(channelId);
+    if (!row) {
+      return null;
+    }
+    return refreshAccessToken(
+      {
+        refreshToken: decryptToken(row.token_enc, deps.archiveTokenKey),
+        clientId: deps.googleClientId,
+        clientSecret: deps.googleClientSecret,
+      },
+      fetchFn,
     );
   }
 
@@ -158,7 +192,132 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
         videoCount: 0,
         listed: row.listed === 1,
       })),
+      budget: {
+        spentUnits: store.getSpent(todayKey(deps.now ?? new Date())),
+        capUnits: DAILY_BUDGET_UNITS,
+      },
     });
+  });
+
+  app.get("/videos", async (c) => {
+    const channelId = c.req.query("channelId") ?? "";
+    if (!channelId) {
+      return c.json({ message: "channelId is required" }, 400);
+    }
+    if (!store.getCreator(channelId)) {
+      return c.json({ message: "channel is not connected" }, 404);
+    }
+    if (!deps.youtubeApiKey) {
+      return c.json({ message: "Missing server env YOUTUBE_API_KEY." }, 500);
+    }
+    try {
+      const header = await resolveChannel(channelId, deps.youtubeApiKey);
+      const page = await listUploadsPage(
+        header.uploadsPlaylistId,
+        deps.youtubeApiKey,
+        c.req.query("pageToken") ?? undefined,
+      );
+      return c.json({
+        videos: page.videos.map((video) => ({
+          id: video.id,
+          title: video.title,
+          publishedAt: video.publishedAt,
+        })),
+        ...(page.nextPageToken ? { nextPageToken: page.nextPageToken } : {}),
+      });
+    } catch (error) {
+      return c.json(
+        {
+          message:
+            error instanceof Error ? error.message : "Video list failed",
+        },
+        502,
+      );
+    }
+  });
+
+  app.post("/index", async (c) => {
+    let raw: unknown;
+    try {
+      raw = await c.req.json();
+    } catch {
+      return c.json({ message: "request body must be JSON" }, 400);
+    }
+    const parsed = IndexSchema.safeParse(raw);
+    if (!parsed.success) {
+      return c.json(
+        { message: "channelId and at least one videoId are required" },
+        400,
+      );
+    }
+    const { channelId, videoIds } = parsed.data;
+    let accessToken: string | null;
+    try {
+      accessToken = await accessTokenFor(channelId);
+    } catch (error) {
+      return c.json(
+        {
+          message:
+            error instanceof Error
+              ? error.message
+              : "Could not refresh YouTube access",
+        },
+        502,
+      );
+    }
+    if (!accessToken) {
+      return c.json({ message: "channel is not connected" }, 404);
+    }
+    const token = accessToken;
+    let closed = false;
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const encoder = new TextEncoder();
+        const send = (event: string, data: unknown) => {
+          if (!closed) {
+            controller.enqueue(encoder.encode(formatSseEvent(event, data)));
+          }
+        };
+        try {
+          const result = await runIndexing({
+            videoIds,
+            accessToken: token,
+            store,
+            fetchFn,
+            onProgress: (stage, detail) => send("progress", { stage, detail }),
+            now: deps.now,
+          });
+          send("result", {
+            // Cue text stays server-side for A3 storage; the event carries
+            // counts so the creator page can summarize the run.
+            indexed: result.indexed.map((video) => ({
+              videoId: video.videoId,
+              trackKind: video.trackKind,
+              language: video.language,
+              cueCount: video.cues.length,
+            })),
+            skipped: result.skipped,
+            paused: result.paused,
+            message: result.paused ? INDEX_PAUSED_MESSAGE : "",
+            spentUnits: result.spentUnits,
+          });
+        } catch (error) {
+          send("error", {
+            message:
+              error instanceof Error ? error.message : "Indexing failed",
+          });
+        } finally {
+          if (!closed) {
+            closed = true;
+            controller.close();
+          }
+        }
+      },
+      cancel() {
+        closed = true;
+      },
+    });
+    return new Response(stream, { headers: SSE_HEADERS });
   });
 
   app.post("/disconnect", async (c) => {

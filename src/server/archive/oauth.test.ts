@@ -7,6 +7,7 @@ import {
   exchangeCode,
   fetchOwnChannel,
   GOOGLE_AUTH_URL,
+  refreshAccessToken,
   revokeToken,
   YOUTUBE_SCOPE,
 } from "./oauth";
@@ -161,6 +162,37 @@ describe("revokeToken", () => {
     const fetchFn = stubFetch(() => jsonResponse({}, 400));
     await expect(revokeToken("rt", fetchFn)).rejects.toThrow(
       "token revoke failed (400)",
+    );
+  });
+});
+
+describe("refreshAccessToken", () => {
+  const args = { refreshToken: "rt", clientId: "cid", clientSecret: "csecret" };
+
+  it("returns a fresh access token", async () => {
+    const seen: string[] = [];
+    const fetchFn = stubFetch((url, init) => {
+      seen.push(`${url} ${init?.method} ${init?.body}`);
+      return jsonResponse({ access_token: "fresh" });
+    });
+    await expect(refreshAccessToken(args, fetchFn)).resolves.toBe("fresh");
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toContain("oauth2.googleapis.com/token");
+    expect(seen[0]).toContain("grant_type=refresh_token");
+    expect(seen[0]).toContain("refresh_token=rt");
+  });
+
+  it("throws on an HTTP error", async () => {
+    const fetchFn = stubFetch(() => jsonResponse({}, 400));
+    await expect(refreshAccessToken(args, fetchFn)).rejects.toThrow(
+      "token refresh failed (400)",
+    );
+  });
+
+  it("throws when Google omits the access token", async () => {
+    const fetchFn = stubFetch(() => jsonResponse({}));
+    await expect(refreshAccessToken(args, fetchFn)).rejects.toThrow(
+      "did not return an access token",
     );
   });
 });

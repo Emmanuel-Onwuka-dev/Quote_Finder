@@ -29,6 +29,25 @@ interface ArchiveResultCardProps {
   timeWindow: string;
 }
 
+export function RefreshNotes({ result }: { result: ArchiveSearchResult }) {
+  return (
+    <>
+      {result.refreshed.length > 0 && (
+        <p className="mt-3 text-sm text-muted">
+          Refreshed {result.refreshed.length} archived{" "}
+          {result.refreshed.length === 1 ? "video" : "videos"} while
+          searching.
+        </p>
+      )}
+      {result.refreshPaused && (
+        <p className="mt-3 text-sm text-muted">
+          Caption refresh paused until tomorrow.
+        </p>
+      )}
+    </>
+  );
+}
+
 export function ArchiveResultCard({ result, timeWindow }: ArchiveResultCardProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [copied, setCopied] = useState(false);
@@ -103,18 +122,7 @@ export function ArchiveResultCard({ result, timeWindow }: ArchiveResultCardProps
           </p>
         </div>
       )}
-      {result.refreshed.length > 0 && (
-        <p className="mt-3 text-sm text-muted">
-          Refreshed {result.refreshed.length} archived{" "}
-          {result.refreshed.length === 1 ? "video" : "videos"} while
-          searching.
-        </p>
-      )}
-      {result.refreshPaused && (
-        <p className="mt-3 text-sm text-muted">
-          Caption refresh paused until tomorrow.
-        </p>
-      )}
+      <RefreshNotes result={result} />
       <div className="mt-4 flex flex-wrap gap-2">
         <button
           type="button"

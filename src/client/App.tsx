@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ArchiveSearchResult } from "./components/ArchiveResultCard";
 import { LogoMark } from "./components/Brand";
 import { Composer, type SearchInput } from "./components/Composer";
 import { Turn, type TurnState } from "./components/Turn";
@@ -14,9 +15,11 @@ export default function App() {
   const [turns, setTurns] = useState<TurnState[]>([]);
   const [composerError, setComposerError] = useState<string | null>(null);
   const [resetKey, setResetKey] = useState(0);
+  const [archiveRunning, setArchiveRunning] = useState(false);
   const nextId = useRef(1);
   const forceFollowRef = useRef(false);
   const { running, start } = useQuoteStream();
+  const busy = running || archiveRunning;
 
   // Chat-style follow: keep the newest turn's latest content in view above
   // the composer as progress streams in and the result lands. Never yanks
@@ -51,10 +54,77 @@ export default function App() {
     );
   }, []);
 
+  const startArchiveSearch = useCallback(
+    async (input: SearchInput) => {
+      const id = nextId.current++;
+      const timeWindow = timeWindowLabel(input.sinceDays);
+      setComposerError(null);
+      forceFollowRef.current = true;
+      setArchiveRunning(true);
+      setTurns((prev) => [
+        ...prev,
+        {
+          id,
+          input,
+          timeWindow,
+          status: "streaming",
+          progress: [
+            {
+              stage: `Searching ${input.channelTitle || "creator"}'s archive`,
+              detail: "",
+            },
+          ],
+          result: null,
+          archiveResult: null,
+          error: null,
+        },
+      ]);
+      setResetKey((key) => key + 1);
+      try {
+        const res = await fetch("/api/archive/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            channelId: input.channelId,
+            quote: input.quote,
+            sinceDays: input.sinceDays,
+          }),
+        });
+        if (!res.ok) {
+          let message = `Archive search failed (${res.status})`;
+          try {
+            const data = (await res.json()) as { message?: string };
+            if (data.message) {
+              message = data.message;
+            }
+          } catch {
+            // Keep the status fallback.
+          }
+          throw new Error(message);
+        }
+        const data = (await res.json()) as ArchiveSearchResult;
+        updateTurn(id, { status: "done", archiveResult: data });
+      } catch (error) {
+        updateTurn(id, {
+          status: "error",
+          error:
+            error instanceof Error ? error.message : "Archive search failed.",
+        });
+      } finally {
+        setArchiveRunning(false);
+      }
+    },
+    [updateTurn],
+  );
+
   const startSearch = useCallback(
     (input: SearchInput) => {
+      if (input.channelId !== "") {
+        void startArchiveSearch(input);
+        return;
+      }
       const id = nextId.current++;
-      const window = timeWindowLabel(input.sinceDays);
+      const timeWindow = timeWindowLabel(input.sinceDays);
       setComposerError(null);
       forceFollowRef.current = true;
       let started = false;
@@ -66,10 +136,11 @@ export default function App() {
             {
               id,
               input,
-              window,
+              timeWindow,
               status: "streaming",
               progress: [],
               result: null,
+              archiveResult: null,
               error: null,
             },
           ]);
@@ -96,10 +167,11 @@ export default function App() {
               {
                 id,
                 input,
-                window,
+                timeWindow,
                 status: "error",
                 progress: [],
                 result: null,
+                archiveResult: null,
                 error: message,
               },
             ]);
@@ -108,7 +180,7 @@ export default function App() {
         },
       });
     },
-    [start, updateTurn],
+    [start, startArchiveSearch, updateTurn],
   );
 
   return (
@@ -143,7 +215,7 @@ export default function App() {
                 <Turn
                   key={turn.id}
                   turn={turn}
-                  running={running}
+                  running={busy}
                   onRetry={startSearch}
                 />
               ))}
@@ -153,7 +225,7 @@ export default function App() {
 
         <div className="bg-background pb-6 pt-2">
           <Composer
-            disabled={running}
+            disabled={busy}
             serverError={composerError}
             resetKey={resetKey}
             onSubmit={startSearch}

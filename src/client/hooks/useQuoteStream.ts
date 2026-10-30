@@ -163,7 +163,12 @@ async function runStream(
     response = await fetch("/api/quote-stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: JSON.stringify({
+        quote: input.quote,
+        creator: input.creator,
+        scene: input.scene,
+        sinceDays: input.sinceDays,
+      }),
     });
   } catch (error) {
     if (!isCancelled()) {

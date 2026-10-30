@@ -6,6 +6,15 @@ export interface SearchInput {
   creator: string;
   scene: string;
   sinceDays: number;
+  /** Listed-archive scope; "" means the usual YouTube path. */
+  channelId: string;
+  channelTitle: string;
+}
+
+interface ListedCreator {
+  channelId: string;
+  channelTitle: string;
+  videoCount: number;
 }
 
 interface ComposerProps {
@@ -38,11 +47,39 @@ export function Composer({
   const [scene, setScene] = useState("");
   const [preset, setPreset] = useState<number | "custom">(0);
   const [customDays, setCustomDays] = useState("30");
+  const [channelId, setChannelId] = useState("");
+  const [creators, setCreators] = useState<ListedCreator[] | null>(null);
   const customInputRef = useRef<HTMLInputElement>(null);
   const lastResetKey = useRef(resetKey);
 
+  useEffect(() => {
+    let cancelled = false;
+    const loadCreators = async () => {
+      try {
+        const res = await fetch("/api/archive/creators");
+        if (!res.ok) {
+          throw new Error(`status ${res.status}`);
+        }
+        const data = (await res.json()) as {
+          creators?: ListedCreator[];
+        };
+        if (!cancelled) {
+          setCreators(data.creators ?? []);
+        }
+      } catch {
+        if (!cancelled) {
+          setCreators([]);
+        }
+      }
+    };
+    void loadCreators();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Clear quote/scene/window when the parent confirms a search started.
-  // The creator is kept, per spec.
+  // The creator and archive scope are kept, per spec.
   useEffect(() => {
     if (lastResetKey.current === resetKey) return;
     lastResetKey.current = resetKey;
@@ -54,6 +91,7 @@ export function Composer({
   const sinceDays =
     preset === "custom" ? clampCustomDays(customDays) : preset;
   const quoteBlank = quote.trim() === "";
+  const archiveMode = channelId !== "";
 
   const submit = () => {
     if (disabled || quoteBlank) return;
@@ -62,6 +100,10 @@ export function Composer({
       creator: creator.trim(),
       scene: scene.trim(),
       sinceDays,
+      channelId,
+      channelTitle:
+        creators?.find((entry) => entry.channelId === channelId)
+          ?.channelTitle ?? "",
     });
   };
 
@@ -85,7 +127,7 @@ export function Composer({
         <div className="flex items-center gap-2">
           <span
             aria-hidden="true"
-            className="font-display text-2xl leading-none text-accent"
+            className="select-none font-display text-4xl leading-none text-accent"
           >
             &ldquo;
           </span>
@@ -101,12 +143,34 @@ export function Composer({
           />
           <span
             aria-hidden="true"
-            className="font-display text-2xl leading-none text-accent"
+            className="select-none font-display text-4xl leading-none text-accent"
           >
             &rdquo;
           </span>
         </div>
       </div>
+
+      {creators !== null && creators.length > 0 && (
+        <div className="mt-3">
+          <label htmlFor="archive-scope" className="mb-1 block font-medium">
+            Search in
+          </label>
+          <select
+            id="archive-scope"
+            value={channelId}
+            onChange={(e) => setChannelId(e.target.value)}
+            disabled={disabled}
+            className={inputClass}
+          >
+            <option value="">All of YouTube</option>
+            {creators.map((entry) => (
+              <option key={entry.channelId} value={entry.channelId}>
+                {entry.channelTitle}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="mt-3">
         <label htmlFor="creator" className="mb-1 block font-medium">
@@ -118,7 +182,7 @@ export function Composer({
           value={creator}
           onChange={(e) => setCreator(e.target.value)}
           placeholder="Creator (optional)"
-          disabled={disabled}
+          disabled={disabled || archiveMode}
           className={inputClass}
         />
       </div>
@@ -136,10 +200,15 @@ export function Composer({
             if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submit();
           }}
           placeholder="describe the scene — what was happening, who was on screen"
-          disabled={disabled}
+          disabled={disabled || archiveMode}
           className={inputClass}
         />
       </div>
+      {archiveMode && (
+        <p className="mt-2 text-sm text-muted">
+          Creator and scene don&apos;t apply to archive search.
+        </p>
+      )}
 
       <fieldset className="mt-4">
         <legend className="font-medium">Time window</legend>

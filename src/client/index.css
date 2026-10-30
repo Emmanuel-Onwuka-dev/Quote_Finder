@@ -26,3 +26,48 @@ h2,
 h3 {
   font-family: var(--font-display);
 }
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+@keyframes magnifier-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.75;
+  }
+}
+
+.magnifier-pulse {
+  animation: magnifier-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes row-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spinner {
+  display: inline-block;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 9999px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  animation: row-spin 0.9s linear infinite;
+  vertical-align: -0.15rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .magnifier-pulse,
+  .spinner {
+    animation: none;
+  }
+}

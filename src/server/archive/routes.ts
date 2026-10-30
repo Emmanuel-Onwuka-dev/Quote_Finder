@@ -17,6 +17,12 @@ import {
   type ArchiveVideoCues,
 } from "./match";
 import {
+  SESSION_COOKIE,
+  SESSION_TTL_MS,
+  issueSession,
+  verifySession,
+} from "./session";
+import {
   buildAuthUrl,
   codeChallenge,
   createCodeVerifier,
@@ -49,6 +55,9 @@ export interface ArchiveDeps {
 
 const STATE_COOKIE = "archive_oauth_state";
 const PENDING_TTL_MS = 10 * 60 * 1000;
+/** Cap on concurrent OAuth handshakes; oldest-first eviction. Without a
+ * cap, hits on /oauth/start grow the pending map without bound. */
+const MAX_PENDING_OAUTH = 100;
 
 /**
  * Where to send the browser after OAuth: the origin that started the flow
@@ -137,6 +146,36 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
     );
   }
 
+  const nowMs = (): number => (deps.now ?? new Date()).getTime();
+
+  const sessionCookieAttrs = {
+    httpOnly: true,
+    sameSite: "Lax",
+    path: "/",
+    maxAge: SESSION_TTL_MS / 1000,
+    secure: deps.googleRedirectUri.startsWith("https://"),
+  } as const;
+
+  function channelsOf(cookieValue: string | undefined): string[] {
+    return verifySession(cookieValue, nowMs(), deps.archiveTokenKey) ?? [];
+  }
+
+  /** Null on a match; otherwise the 401 (session missing, invalid, or
+   * expired) or 403 (session does not include the channel) to return. */
+  function requireChannel(
+    cookieValue: string | undefined,
+    channelId: string,
+  ): { status: 401 | 403; message: string } | null {
+    const ids = verifySession(cookieValue, nowMs(), deps.archiveTokenKey);
+    if (ids === null) {
+      return { status: 401, message: "creator sign-in required" };
+    }
+    if (!ids.includes(channelId)) {
+      return { status: 403, message: "session does not include this channel" };
+    }
+    return null;
+  }
+
   // Null when the channel is not connected; throws when its token is
   // missing or Google refuses the refresh.
   async function accessTokenFor(channelId: string): Promise<string | null> {
@@ -164,6 +203,13 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
     const state = createState();
     const verifier = createCodeVerifier();
     prunePending(Date.now());
+    while (pending.size >= MAX_PENDING_OAUTH) {
+      const oldest = pending.keys().next().value;
+      if (oldest === undefined) {
+        break;
+      }
+      pending.delete(oldest);
+    }
     pending.set(state, {
       verifier,
       returnBase: returnBaseFromReferer(c.req.header("referer")),
@@ -218,6 +264,16 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
         channelTitle: channel.channelTitle,
         tokenEnc: encryptToken(tokens.refreshToken, deps.archiveTokenKey),
       });
+      setCookie(
+        c,
+        SESSION_COOKIE,
+        issueSession(
+          [...channelsOf(getCookie(c, SESSION_COOKIE)), channel.channelId],
+          nowMs(),
+          deps.archiveTokenKey,
+        ),
+        sessionCookieAttrs,
+      );
     } catch (error) {
       return fail(
         error instanceof Error ? error.message : "Sign-in failed",
@@ -229,8 +285,12 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
 
   app.get("/status", (c) => {
     const now = deps.now ?? new Date();
+    const mine = new Set(channelsOf(getCookie(c, SESSION_COOKIE)));
     return c.json({
-      creators: store.listCreators().map((row) => ({
+      creators: store
+        .listCreators()
+        .filter((row) => mine.has(row.channel_id))
+        .map((row) => ({
         channelId: row.channel_id,
         channelTitle: row.channel_title,
         videoCount: store.countFreshVideos(row.channel_id, now),
@@ -258,6 +318,10 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
     const channelId = c.req.query("channelId") ?? "";
     if (!channelId) {
       return c.json({ message: "channelId is required" }, 400);
+    }
+    const denied = requireChannel(getCookie(c, SESSION_COOKIE), channelId);
+    if (denied) {
+      return c.json({ message: denied.message }, denied.status);
     }
     if (!store.getCreator(channelId)) {
       return c.json({ message: "channel is not connected" }, 404);
@@ -316,6 +380,10 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
       return c.json({ message: "Missing server env YOUTUBE_API_KEY." }, 500);
     }
     const { channelId, videoIds } = parsed.data;
+    const denied = requireChannel(getCookie(c, SESSION_COOKIE), channelId);
+    if (denied) {
+      return c.json({ message: denied.message }, denied.status);
+    }
     let accessToken: string | null;
     try {
       accessToken = await accessTokenFor(channelId);
@@ -538,6 +606,13 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
         400,
       );
     }
+    const denied = requireChannel(
+      getCookie(c, SESSION_COOKIE),
+      parsed.data.channelId,
+    );
+    if (denied) {
+      return c.json({ message: denied.message }, denied.status);
+    }
     const row = store.getCreator(parsed.data.channelId);
     if (!row) {
       return c.json({ message: "channel is not connected" }, 404);
@@ -557,6 +632,13 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
     if (!parsed.success) {
       return c.json({ message: "channelId must not be empty" }, 400);
     }
+    const denied = requireChannel(
+      getCookie(c, SESSION_COOKIE),
+      parsed.data.channelId,
+    );
+    if (denied) {
+      return c.json({ message: denied.message }, denied.status);
+    }
     const row = store.getCreator(parsed.data.channelId);
     if (!row) {
       return c.json({ message: "channel is not connected" }, 404);
@@ -575,6 +657,23 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
       revoked = false;
     }
     store.deleteChannel(row.channel_id);
+    try {
+      const remaining = channelsOf(getCookie(c, SESSION_COOKIE)).filter(
+        (id) => id !== row.channel_id,
+      );
+      if (remaining.length === 0) {
+        deleteCookie(c, SESSION_COOKIE, { path: "/" });
+      } else {
+        setCookie(
+          c,
+          SESSION_COOKIE,
+          issueSession(remaining, nowMs(), deps.archiveTokenKey),
+          sessionCookieAttrs,
+        );
+      }
+    } catch {
+      deleteCookie(c, SESSION_COOKIE, { path: "/" });
+    }
     return c.json({ ok: true, revoked });
   });
 

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { decryptToken, encryptToken } from "./crypto";
 import { createArchiveRoutes, type ArchiveDeps } from "./routes";
+import { SESSION_COOKIE, issueSession, verifySession } from "./session";
 import { openArchiveStore, todayKey, type ArchiveStore } from "./store";
 
 const TEST_KEY = "ab".repeat(32);
@@ -120,6 +121,14 @@ function saveConnectedChannel(store: ArchiveStore): void {
     channelTitle: "Test Channel",
     tokenEnc: encryptToken("rt", TEST_KEY),
   });
+}
+
+function sessionCookie(
+  channelIds: string | string[],
+  nowMs = Date.now(),
+): string {
+  const ids = Array.isArray(channelIds) ? channelIds : [channelIds];
+  return `${SESSION_COOKIE}=${issueSession(ids, nowMs, TEST_KEY)}`;
 }
 
 async function startFlow(app: Hono): Promise<{ state: string; cookie: string }> {
@@ -280,7 +289,9 @@ describe("GET /status", () => {
       channelTitle: "Test Channel",
       tokenEnc: "iv:body",
     });
-    const res = await app.request("/api/archive/status");
+    const res = await app.request("/api/archive/status", {
+      headers: { Cookie: sessionCookie("UCchan1") },
+    });
     expect(await res.json()).toEqual({
       creators: [
         {
@@ -336,7 +347,10 @@ describe("POST /disconnect", () => {
     );
     const res = await app.request("/api/archive/disconnect", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: sessionCookie("UCchan1"),
+      },
       body: JSON.stringify({ channelId: "UCchan1" }),
     });
     expect(res.status).toBe(200);
@@ -358,7 +372,10 @@ describe("POST /disconnect", () => {
     });
     const res = await app.request("/api/archive/disconnect", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: sessionCookie("UCchan1"),
+      },
       body: JSON.stringify({ channelId: "UCchan1" }),
     });
     expect(res.status).toBe(200);
@@ -370,7 +387,10 @@ describe("POST /disconnect", () => {
     const { app } = setup();
     const res = await app.request("/api/archive/disconnect", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: sessionCookie("UCmissing"),
+      },
       body: JSON.stringify({ channelId: "UCmissing" }),
     });
     expect(res.status).toBe(404);
@@ -520,7 +540,9 @@ describe("GET /videos", () => {
     const { app, store } = setup();
     saveConnectedChannel(store);
     stubUploads([]);
-    const res = await app.request("/api/archive/videos?channelId=UCchan1");
+    const res = await app.request("/api/archive/videos?channelId=UCchan1", {
+      headers: { Cookie: sessionCookie("UCchan1") },
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       videos: [
@@ -542,6 +564,7 @@ describe("GET /videos", () => {
     stubUploads(seen);
     const res = await app.request(
       "/api/archive/videos?channelId=UCchan1&pageToken=tok123",
+      { headers: { Cookie: sessionCookie("UCchan1") } },
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
@@ -559,7 +582,9 @@ describe("GET /videos", () => {
 
   it("returns 404 for a channel that is not connected", async () => {
     const { app } = setup();
-    const res = await app.request("/api/archive/videos?channelId=UCmissing");
+    const res = await app.request("/api/archive/videos?channelId=UCmissing", {
+      headers: { Cookie: sessionCookie("UCmissing") },
+    });
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ message: "channel is not connected" });
   });
@@ -574,16 +599,25 @@ describe("GET /videos", () => {
     const { app, store } = setup();
     saveConnectedChannel(store);
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({}, 500)));
-    const res = await app.request("/api/archive/videos?channelId=UCchan1");
+    const res = await app.request("/api/archive/videos?channelId=UCchan1", {
+      headers: { Cookie: sessionCookie("UCchan1") },
+    });
     expect(res.status).toBe(502);
   });
 });
 
 describe("POST /index", () => {
-  async function postIndex(app: Hono, body: unknown): Promise<Response> {
+  async function postIndex(
+    app: Hono,
+    body: unknown,
+    channelId = "UCchan1",
+  ): Promise<Response> {
     return app.request("/api/archive/index", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: sessionCookie(channelId),
+      },
       body: typeof body === "string" ? body : JSON.stringify(body),
     });
   }
@@ -703,10 +737,14 @@ describe("POST /index", () => {
 
   it("returns 404 for a channel that is not connected", async () => {
     const { app } = setup();
-    const res = await postIndex(app, {
-      channelId: "UCmissing",
-      videoIds: ["v1"],
-    });
+    const res = await postIndex(
+      app,
+      {
+        channelId: "UCmissing",
+        videoIds: ["v1"],
+      },
+      "UCmissing",
+    );
     expect(res.status).toBe(404);
   });
 
@@ -814,7 +852,9 @@ describe("archive storage", () => {
       cues: [{ idx: 1, startSeconds: 1, endSeconds: 2, text: "hi" }],
     });
     stubChannelUploads();
-    const res = await app.request("/api/archive/videos?channelId=UCchan1");
+    const res = await app.request("/api/archive/videos?channelId=UCchan1", {
+      headers: { Cookie: sessionCookie("UCchan1") },
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       videos: [
@@ -846,7 +886,10 @@ describe("archive storage", () => {
     stubChannelUploads();
     const res = await app.request("/api/archive/index", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: sessionCookie("UCchan1"),
+      },
       body: JSON.stringify({ channelId: "UCchan1", videoIds: ["vid1"] }),
     });
     expect(res.status).toBe(200);
@@ -863,7 +906,9 @@ describe("archive storage", () => {
     expect(result.indexed).toEqual([
       { videoId: "vid1", trackKind: "standard", language: "en", cueCount: 1 },
     ]);
-    const status = await app.request("/api/archive/status");
+    const status = await app.request("/api/archive/status", {
+      headers: { Cookie: sessionCookie("UCchan1") },
+    });
     expect((await status.json()) as unknown).toEqual({
       creators: [
         {
@@ -904,7 +949,10 @@ describe("archive storage", () => {
     stubChannelUploads();
     const res = await app.request("/api/archive/index", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: sessionCookie("UCchan1"),
+      },
       body: JSON.stringify({ channelId: "UCchan1", videoIds: ["vid1"] }),
     });
     const events = parseSseEvents(await res.text());
@@ -936,7 +984,10 @@ describe("archive storage", () => {
     });
     const res = await app.request("/api/archive/disconnect", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: sessionCookie("UCchan1"),
+      },
       body: JSON.stringify({ channelId: "UCchan1" }),
     });
     expect(res.status).toBe(200);
@@ -1382,7 +1433,10 @@ describe("POST /listed", () => {
     const post = (body: unknown) =>
       app.request("/api/archive/listed", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: sessionCookie("UCchan1"),
+        },
         body: JSON.stringify(body),
       });
     const on = await post({ channelId: "UCchan1", listed: true });
@@ -1398,7 +1452,10 @@ describe("POST /listed", () => {
     const { app } = setup();
     const res = await app.request("/api/archive/listed", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: sessionCookie("UCmissing"),
+      },
       body: JSON.stringify({ channelId: "UCmissing", listed: true }),
     });
     expect(res.status).toBe(404);
@@ -1419,5 +1476,239 @@ describe("POST /listed", () => {
     expect(
       (await post({ channelId: "UCchan1", listed: "yes" })).status,
     ).toBe(400);
+  });
+});
+
+describe("channel sessions", () => {
+  const postAuthed = (
+    app: Hono,
+    path: string,
+    body: unknown,
+    cookie?: string,
+  ): Promise<Response> =>
+    app.request(path, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(cookie ? { Cookie: cookie } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+
+  const getAuthed = (
+    app: Hono,
+    path: string,
+    cookie?: string,
+  ): Promise<Response> =>
+    app.request(path, cookie ? { headers: { Cookie: cookie } } : undefined);
+
+  function sessionValue(res: Response): string {
+    const header = res.headers.get("set-cookie") ?? "";
+    return header.split(`${SESSION_COOKIE}=`)[1]?.split(";")[0] ?? "";
+  }
+
+  const matrix: Array<{
+    name: string;
+    call: (app: Hono, cookie?: string) => Promise<Response>;
+  }> = [
+    {
+      name: "GET /videos",
+      call: (app, cookie) =>
+        getAuthed(app, "/api/archive/videos?channelId=UCchan1", cookie),
+    },
+    {
+      name: "POST /index",
+      call: (app, cookie) =>
+        postAuthed(
+          app,
+          "/api/archive/index",
+          { channelId: "UCchan1", videoIds: ["v1"] },
+          cookie,
+        ),
+    },
+    {
+      name: "POST /disconnect",
+      call: (app, cookie) =>
+        postAuthed(
+          app,
+          "/api/archive/disconnect",
+          { channelId: "UCchan1" },
+          cookie,
+        ),
+    },
+    {
+      name: "POST /listed",
+      call: (app, cookie) =>
+        postAuthed(
+          app,
+          "/api/archive/listed",
+          { channelId: "UCchan1", listed: true },
+          cookie,
+        ),
+    },
+  ];
+
+  it.each(matrix)("$name requires a session (401)", async ({ call }) => {
+    const { app, store } = setup();
+    saveConnectedChannel(store);
+    const res = await call(app, undefined);
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ message: "creator sign-in required" });
+  });
+
+  it.each(matrix)(
+    "$name rejects a session for another channel (403)",
+    async ({ call }) => {
+      const { app, store } = setup();
+      saveConnectedChannel(store);
+      const res = await call(app, sessionCookie("UCother"));
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({
+        message: "session does not include this channel",
+      });
+    },
+  );
+
+  it("rejects an expired session", async () => {
+    const { app, store } = setup();
+    saveConnectedChannel(store);
+    const stale = sessionCookie(
+      "UCchan1",
+      Date.now() - 31 * 24 * 60 * 60 * 1000,
+    );
+    const res = await getAuthed(
+      app,
+      "/api/archive/videos?channelId=UCchan1",
+      stale,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("limits /status to the caller's own creators", async () => {
+    const { app, store } = setup();
+    saveConnectedChannel(store);
+    store.saveCreator({
+      channelId: "UCchan2",
+      channelTitle: "Other",
+      tokenEnc: encryptToken("rt2", TEST_KEY),
+    });
+    const mine = await app.request("/api/archive/status", {
+      headers: { Cookie: sessionCookie("UCchan1") },
+    });
+    expect((await mine.json()) as unknown).toMatchObject({
+      creators: [{ channelId: "UCchan1", channelTitle: "Test Channel" }],
+    });
+    const none = await app.request("/api/archive/status");
+    expect((await none.json()) as unknown).toMatchObject({ creators: [] });
+  });
+
+  it("issues a session cookie on connect", async () => {
+    const { app } = setup();
+    const { state, cookie } = await startFlow(app);
+    const res = await app.request(
+      `/api/archive/oauth/callback?code=auth-code&state=${state}`,
+      { headers: { cookie } },
+    );
+    expect(res.status).toBe(302);
+    expect(verifySession(sessionValue(res), Date.now(), TEST_KEY)).toEqual([
+      "UCchan1",
+    ]);
+  });
+
+  it("merges a second channel into the session", async () => {
+    const seen: string[] = [];
+    const inner = makeGoogleFetch({}, seen);
+    let channelCalls = 0;
+    const fetchFn = async (
+      url: string | URL | Request,
+    ): Promise<Response> => {
+      if (String(url).includes("/youtube/v3/channels")) {
+        channelCalls += 1;
+        if (channelCalls === 2) {
+          return jsonResponse({
+            items: [{ id: "UCchan2", snippet: { title: "Second" } }],
+          });
+        }
+      }
+      return inner(url);
+    };
+    const { app } = setup({}, { fetchFn });
+    const first = await startFlow(app);
+    const one = await app.request(
+      `/api/archive/oauth/callback?code=a&state=${first.state}`,
+      { headers: { Cookie: first.cookie } },
+    );
+    expect(one.status).toBe(302);
+    const session1 = sessionValue(one);
+    expect(verifySession(session1, Date.now(), TEST_KEY)).toEqual(["UCchan1"]);
+    const second = await startFlow(app);
+    const two = await app.request(
+      `/api/archive/oauth/callback?code=b&state=${second.state}`,
+      {
+        headers: { Cookie: `${second.cookie}; ${SESSION_COOKIE}=${session1}` },
+      },
+    );
+    expect(two.status).toBe(302);
+    expect(verifySession(sessionValue(two), Date.now(), TEST_KEY)).toEqual([
+      "UCchan1",
+      "UCchan2",
+    ]);
+  });
+
+  it("drops the channel from the session on disconnect", async () => {
+    const { app, store } = setup();
+    saveConnectedChannel(store);
+    const res = await postAuthed(
+      app,
+      "/api/archive/disconnect",
+      { channelId: "UCchan1" },
+      sessionCookie(["UCchan1", "UCchan2"]),
+    );
+    expect(res.status).toBe(200);
+    expect(verifySession(sessionValue(res), Date.now(), TEST_KEY)).toEqual([
+      "UCchan2",
+    ]);
+  });
+
+  it("clears the session when the last channel disconnects", async () => {
+    const { app, store } = setup();
+    saveConnectedChannel(store);
+    const cookie = sessionCookie("UCchan1");
+    const res = await postAuthed(
+      app,
+      "/api/archive/disconnect",
+      { channelId: "UCchan1" },
+      cookie,
+    );
+    expect(res.status).toBe(200);
+    expect(sessionValue(res)).toBe("");
+    const videos = await getAuthed(
+      app,
+      "/api/archive/videos?channelId=UCchan1",
+      cookie,
+    );
+    expect(videos.status).toBe(404);
+  });
+
+  it("evicts the oldest pending OAuth session past the cap", async () => {
+    const { app, seen } = setup();
+    const first = await startFlow(app);
+    for (let i = 0; i < 100; i += 1) {
+      await app.request("/api/archive/oauth/start");
+    }
+    const evicted = await app.request(
+      `/api/archive/oauth/callback?code=auth-code&state=${first.state}`,
+      { headers: { Cookie: first.cookie } },
+    );
+    expect(evicted.status).toBe(302);
+    expect(evicted.headers.get("location")).toContain("error=");
+    expect(seen).toEqual([]);
+    const fresh = await startFlow(app);
+    const ok = await app.request(
+      `/api/archive/oauth/callback?code=auth-code&state=${fresh.state}`,
+      { headers: { Cookie: fresh.cookie } },
+    );
+    expect(ok.status).toBe(302);
+    expect(ok.headers.get("location")).toBe("/creator?connected=1");
   });
 });

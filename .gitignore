@@ -4,3 +4,9 @@
 node_modules/
 dist/
 .DS_Store
+# Creator archive SQLite database (tokens + captions, never commit)
+*.db
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm

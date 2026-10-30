@@ -8,6 +8,11 @@ export interface ServerConfig {
   transcriptionModel: string;
   imageModel: string;
   openModelUrl: string;
+  googleClientId: string;
+  googleClientSecret: string;
+  googleRedirectUri: string;
+  archiveTokenKey: string;
+  archiveDbPath: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
@@ -20,6 +25,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       env.TRANSCRIPTION_MODEL ?? "muse-voice-transcribe-1.0",
     imageModel: env.IMAGE_MODEL ?? "muse-image-1.0",
     openModelUrl: env.OPEN_MODEL_URL ?? "",
+    googleClientId: env.GOOGLE_CLIENT_ID ?? "",
+    googleClientSecret: env.GOOGLE_CLIENT_SECRET ?? "",
+    googleRedirectUri: env.GOOGLE_REDIRECT_URI ?? "",
+    archiveTokenKey: env.ARCHIVE_TOKEN_KEY ?? "",
+    archiveDbPath: env.ARCHIVE_DB_PATH ?? "./archive.db",
   };
 }
 

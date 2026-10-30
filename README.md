@@ -39,6 +39,9 @@ downloads.
 - P3a: `POST /api/quote-stream` — zod body validation, `locateQuote`
   progress streamed as SSE stages, `result`/`error` events, with endpoint
   tests.
+- P3b: chat UI — session-only turns, live SSE progress, result card
+  (nocookie embed, unverified notice), candidate list, `openExternal`
+  links, original SVG brand, SEO tags, and lib unit tests.
 
 ## External services and libraries
 

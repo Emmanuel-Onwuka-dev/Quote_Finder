@@ -10,3 +10,6 @@ dist/
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
+
+# Internal build docs (kept out of the public repo)
+docs/

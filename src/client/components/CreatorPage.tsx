@@ -21,6 +21,7 @@ interface VideoEntry {
   id: string;
   title: string;
   publishedAt: string;
+  indexed: "fresh" | "expired" | "never";
 }
 
 interface IndexSummary {
@@ -69,7 +70,7 @@ export function CreatorPage() {
   const disconnect = async (channelId: string, channelTitle: string) => {
     if (
       !window.confirm(
-        `Disconnect ${channelTitle || "this channel"}? This revokes Quotefinder's access and deletes the stored sign-in.`,
+        `Disconnect ${channelTitle || "this channel"}? This revokes Quotefinder's access and deletes the stored sign-in and archive.`,
       )
     ) {
       return;
@@ -90,11 +91,11 @@ export function CreatorPage() {
         throw new Error(`status ${res.status}`);
       }
       const data = (await res.json()) as { revoked: boolean };
-      if (!data.revoked) {
-        setNotice(
-          "Google reported an error revoking access, but the stored sign-in was deleted.",
-        );
-      }
+      setNotice(
+        data.revoked
+          ? "Archive deleted."
+          : "Archive deleted locally, but Google reported an error revoking access.",
+      );
       await load();
     } catch {
       setLoadError("Disconnect failed. Please try again.");
@@ -253,7 +254,12 @@ function CreatorIndexing({
         );
         setNextPageToken(data.nextPageToken);
         if (!pageToken) {
-          setSelected(new Set(data.videos.slice(0, 20).map((v) => v.id)));
+          // Default to the most recent 20 that still need indexing —
+          // expired first, then unindexed, fresh videos excluded.
+          const expired = data.videos.filter((v) => v.indexed === "expired");
+          const unindexed = data.videos.filter((v) => v.indexed === "never");
+          const candidates = [...expired, ...unindexed];
+          setSelected(new Set(candidates.slice(0, 20).map((v) => v.id)));
         }
       } catch {
         if (!cancelledRef.current) {
@@ -337,6 +343,7 @@ function CreatorIndexing({
           } else if (evt.event === "result") {
             setSummary(JSON.parse(evt.data) as IndexSummary);
             onDone();
+            await loadVideos(undefined);
             await reader.cancel().catch(() => {});
             return;
           } else if (evt.event === "error") {
@@ -392,6 +399,14 @@ function CreatorIndexing({
                     <span className="font-mono text-sm text-muted">
                       {formatDate(video.publishedAt)}
                     </span>
+                    {video.indexed === "fresh" && (
+                      <span className="text-sm text-muted">✓ Indexed</span>
+                    )}
+                    {video.indexed === "expired" && (
+                      <span className="text-sm text-accent">
+                        Expired — index again
+                      </span>
+                    )}
                   </label>
                 </li>
               ))}

@@ -45,6 +45,11 @@ downloads.
 - A1: creator archive foundation — Google OAuth (PKCE) connect/disconnect
   for creators, encrypted refresh-token storage in SQLite, `/creator`
   page, and endpoint tests with mocked Google responses.
+- A2: caption indexing pipeline — SRT parser, captions API client, daily
+  budget counter, token refresh, videos/index routes, and creator
+  indexing UI with live progress.
+- A3: archive storage — videos/cues tables, purge of expired cue text,
+  indexed states, real video counts, and transactional revoke-and-delete.
 
 ## External services and libraries
 

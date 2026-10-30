@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { openArchiveStore } from "./store";
+import { openArchiveStore, videoFreshness } from "./store";
 
 function openMemory() {
   return openArchiveStore(":memory:");
+}
+
+function cue(idx: number, text = `line ${idx}`) {
+  return { idx, startSeconds: idx, endSeconds: idx + 1, text };
 }
 
 describe("openArchiveStore", () => {
@@ -59,7 +63,7 @@ describe("openArchiveStore", () => {
     }
   });
 
-  it("lists and deletes creators", () => {
+  it("deletes a channel with its videos and cues", () => {
     const store = openMemory();
     try {
       store.saveCreator({
@@ -72,15 +76,31 @@ describe("openArchiveStore", () => {
         channelTitle: "B",
         tokenEnc: "iv:b",
       });
-      expect(store.listCreators().map((row) => row.channel_id)).toEqual([
-        "UCa",
-        "UCb",
-      ]);
-      store.deleteCreator("UCa");
+      store.saveVideoWithCues({
+        channelId: "UCa",
+        videoId: "va",
+        title: "A vid",
+        publishedAt: "2026-10-01T00:00:00Z",
+        trackKind: "standard",
+        fetchedAt: "2026-10-30T00:00:00Z",
+        cues: [cue(1)],
+      });
+      store.saveVideoWithCues({
+        channelId: "UCb",
+        videoId: "vb",
+        title: "B vid",
+        publishedAt: "2026-10-01T00:00:00Z",
+        trackKind: "standard",
+        fetchedAt: "2026-10-30T00:00:00Z",
+        cues: [cue(1)],
+      });
+      store.deleteChannel("UCa");
       expect(store.getCreator("UCa")).toBeUndefined();
+      expect(store.getIndexedVideos("UCa")).toEqual([]);
       expect(store.listCreators().map((row) => row.channel_id)).toEqual([
         "UCb",
       ]);
+      expect(store.getIndexedVideos("UCb")).toHaveLength(1);
     } finally {
       store.close();
     }
@@ -111,6 +131,195 @@ describe("daily budget", () => {
       expect(store.getSpent("2026-10-31")).toBe(0);
       expect(store.trySpend("2026-10-31", 250)).toBe(true);
       expect(store.getSpent("2026-10-30")).toBe(5000);
+    } finally {
+      store.close();
+    }
+  });
+});
+
+describe("videos and cues", () => {
+  it("saves a video with cues and reads it back", () => {
+    const store = openMemory();
+    try {
+      store.saveVideoWithCues({
+        channelId: "UCchan1",
+        videoId: "vid1",
+        title: "A build",
+        publishedAt: "2026-10-01T00:00:00Z",
+        trackKind: "standard",
+        fetchedAt: "2026-10-30T00:00:00Z",
+        cues: [cue(1), cue(2)],
+      });
+      expect(store.getIndexedVideos("UCchan1")).toEqual([
+        {
+          video_id: "vid1",
+          title: "A build",
+          published_at: "2026-10-01T00:00:00Z",
+          track_kind: "standard",
+          fetched_at: "2026-10-30T00:00:00Z",
+          cue_count: 2,
+        },
+      ]);
+      expect(store.getIndexedVideos("UCmissing")).toEqual([]);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("re-indexing replaces cues and refreshes the fetch time", () => {
+    const store = openMemory();
+    try {
+      store.saveVideoWithCues({
+        channelId: "UCchan1",
+        videoId: "vid1",
+        title: "Old title",
+        publishedAt: "",
+        trackKind: "asr",
+        fetchedAt: "2026-09-01T00:00:00Z",
+        cues: [cue(1), cue(2), cue(3)],
+      });
+      store.saveVideoWithCues({
+        channelId: "UCchan1",
+        videoId: "vid1",
+        title: "New title",
+        publishedAt: "",
+        trackKind: "standard",
+        fetchedAt: "2026-10-30T00:00:00Z",
+        cues: [cue(1)],
+      });
+      expect(store.getIndexedVideos("UCchan1")).toEqual([
+        expect.objectContaining({
+          video_id: "vid1",
+          title: "New title",
+          track_kind: "standard",
+          fetched_at: "2026-10-30T00:00:00Z",
+          cue_count: 1,
+        }),
+      ]);
+    } finally {
+      store.close();
+    }
+  });
+});
+
+describe("videoFreshness", () => {
+  const now = new Date("2026-10-30T12:00:00Z");
+
+  it("reports never for unknown videos", () => {
+    expect(videoFreshness(undefined, now)).toBe("never");
+  });
+
+  it("reports fresh for recent videos with cues", () => {
+    expect(
+      videoFreshness(
+        { fetched_at: "2026-10-29T00:00:00Z", cue_count: 5 },
+        now,
+      ),
+    ).toBe("fresh");
+  });
+
+  it("reports expired for old or cueless videos", () => {
+    expect(
+      videoFreshness(
+        { fetched_at: "2026-09-01T00:00:00Z", cue_count: 5 },
+        now,
+      ),
+    ).toBe("expired");
+    expect(
+      videoFreshness(
+        { fetched_at: "2026-10-29T00:00:00Z", cue_count: 0 },
+        now,
+      ),
+    ).toBe("expired");
+    // Exactly at the 30-day cutoff counts as expired.
+    expect(
+      videoFreshness(
+        { fetched_at: "2026-09-30T12:00:00Z", cue_count: 5 },
+        now,
+      ),
+    ).toBe("expired");
+  });
+});
+
+describe("countFreshVideos", () => {
+  it("counts only fresh videos with cues", () => {
+    const store = openMemory();
+    const now = new Date("2026-10-30T12:00:00Z");
+    try {
+      const base = {
+        channelId: "UCchan1",
+        title: "t",
+        publishedAt: "",
+        trackKind: "standard",
+      };
+      store.saveVideoWithCues({
+        ...base,
+        videoId: "fresh",
+        fetchedAt: "2026-10-29T00:00:00Z",
+        cues: [cue(1)],
+      });
+      store.saveVideoWithCues({
+        ...base,
+        videoId: "stale",
+        fetchedAt: "2026-09-01T00:00:00Z",
+        cues: [cue(1)],
+      });
+      store.saveVideoWithCues({
+        ...base,
+        videoId: "empty",
+        fetchedAt: "2026-10-29T00:00:00Z",
+        cues: [],
+      });
+      store.saveVideoWithCues({
+        ...base,
+        channelId: "UCother",
+        videoId: "other",
+        fetchedAt: "2026-10-29T00:00:00Z",
+        cues: [cue(1)],
+      });
+      expect(store.countFreshVideos("UCchan1", now)).toBe(1);
+      expect(store.countFreshVideos("UCother", now)).toBe(1);
+      expect(store.countFreshVideos("UCmissing", now)).toBe(0);
+    } finally {
+      store.close();
+    }
+  });
+});
+
+describe("purgeExpired", () => {
+  it("deletes cue text for old videos but keeps titles", () => {
+    const store = openMemory();
+    try {
+      store.saveVideoWithCues({
+        channelId: "UCchan1",
+        videoId: "old",
+        title: "Old",
+        publishedAt: "",
+        trackKind: "asr",
+        fetchedAt: "2026-09-01T00:00:00Z",
+        cues: [cue(1), cue(2)],
+      });
+      store.saveVideoWithCues({
+        channelId: "UCchan1",
+        videoId: "fresh",
+        title: "Fresh",
+        publishedAt: "",
+        trackKind: "standard",
+        fetchedAt: "2026-10-29T00:00:00Z",
+        cues: [cue(1)],
+      });
+      expect(store.purgeExpired(new Date("2026-10-30T12:00:00Z"))).toBe(2);
+      const byId = new Map(
+        store
+          .getIndexedVideos("UCchan1")
+          .map((video) => [video.video_id, video]),
+      );
+      expect(byId.get("old")).toMatchObject({ title: "Old", cue_count: 0 });
+      expect(byId.get("fresh")).toMatchObject({
+        title: "Fresh",
+        cue_count: 1,
+      });
+      expect(store.purgeExpired(new Date("2026-10-30T12:00:00Z"))).toBe(0);
     } finally {
       store.close();
     }

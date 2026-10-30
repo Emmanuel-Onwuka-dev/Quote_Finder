@@ -1,9 +1,10 @@
 // Creator archive storage (SQLite via better-sqlite3). Holds connected
-// creators and their encrypted refresh tokens, plus the daily API budget
-// counter. Videos and caption cues arrive in A3. The database file stays
-// out of git (see .gitignore).
+// creators and their encrypted refresh tokens, indexed videos with caption
+// cues, and the daily API budget counter. The database file stays out of
+// git (see .gitignore).
 
 import Database from "better-sqlite3";
+import type { CaptionCue } from "./srt";
 
 export interface CreatorRow {
   channel_id: string;
@@ -14,6 +15,17 @@ export interface CreatorRow {
   created_at: string;
 }
 
+export interface StoredVideo {
+  video_id: string;
+  title: string;
+  published_at: string;
+  track_kind: string;
+  fetched_at: string;
+  cue_count: number;
+}
+
+export type VideoFreshness = "fresh" | "expired" | "never";
+
 export interface ArchiveStore {
   saveCreator(row: {
     channelId: string;
@@ -22,18 +34,52 @@ export interface ArchiveStore {
   }): void;
   getCreator(channelId: string): CreatorRow | undefined;
   listCreators(): CreatorRow[];
-  deleteCreator(channelId: string): void;
+  deleteChannel(channelId: string): void;
   getSpent(day: string): number;
   trySpend(day: string, units: number, cap?: number): boolean;
+  saveVideoWithCues(args: {
+    channelId: string;
+    videoId: string;
+    title: string;
+    publishedAt: string;
+    trackKind: string;
+    fetchedAt: string;
+    cues: CaptionCue[];
+  }): void;
+  getIndexedVideos(channelId: string): StoredVideo[];
+  countFreshVideos(channelId: string, now: Date): number;
+  purgeExpired(now: Date): number;
   close(): void;
 }
 
 /** §4.3 daily indexing budget: 5,000 units, about 20 videos. */
 export const DAILY_BUDGET_UNITS = 5000;
 
+/** §4.3 caption retention: cue text is purged after 30 days. */
+export const ARCHIVE_FRESH_DAYS = 30;
+
 /** UTC calendar day key (`YYYY-MM-DD`) for the budget counter. */
 export function todayKey(now: Date = new Date()): string {
   return now.toISOString().slice(0, 10);
+}
+
+function freshnessCutoff(now: Date): string {
+  return new Date(
+    now.getTime() - ARCHIVE_FRESH_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+}
+
+export function videoFreshness(
+  row: { fetched_at: string; cue_count: number } | undefined,
+  now: Date,
+): VideoFreshness {
+  if (!row) {
+    return "never";
+  }
+  if (row.cue_count > 0 && row.fetched_at > freshnessCutoff(now)) {
+    return "fresh";
+  }
+  return "expired";
 }
 
 const SCHEMA = `
@@ -48,6 +94,25 @@ CREATE TABLE IF NOT EXISTS budget (
   day TEXT PRIMARY KEY,
   spent INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS videos (
+  video_id TEXT PRIMARY KEY,
+  channel_id TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  published_at TEXT NOT NULL DEFAULT '',
+  track_kind TEXT NOT NULL DEFAULT '',
+  fetched_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_videos_channel ON videos(channel_id);
+CREATE TABLE IF NOT EXISTS cues (
+  cue_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  video_id TEXT NOT NULL,
+  idx INTEGER NOT NULL,
+  start_seconds REAL NOT NULL,
+  end_seconds REAL NOT NULL,
+  text TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cues_video_idx ON cues(video_id, idx);
+CREATE INDEX IF NOT EXISTS idx_cues_text ON cues(text);
 `;
 
 export function openArchiveStore(path: string): ArchiveStore {
@@ -66,12 +131,57 @@ export function openArchiveStore(path: string): ArchiveStore {
   const listStmt = db.prepare(
     "SELECT channel_id, channel_title, token_enc, listed, created_at FROM creators ORDER BY created_at",
   );
-  const deleteStmt = db.prepare("DELETE FROM creators WHERE channel_id = ?");
+  const deleteCreatorStmt = db.prepare(
+    "DELETE FROM creators WHERE channel_id = ?",
+  );
   const spentStmt = db.prepare("SELECT spent FROM budget WHERE day = ?");
   const upsertSpentStmt = db.prepare(`
     INSERT INTO budget (day, spent) VALUES (@day, @spent)
     ON CONFLICT(day) DO UPDATE SET spent = excluded.spent
   `);
+  const upsertVideoStmt = db.prepare(`
+    INSERT INTO videos (video_id, channel_id, title, published_at, track_kind, fetched_at)
+    VALUES (@videoId, @channelId, @title, @publishedAt, @trackKind, @fetchedAt)
+    ON CONFLICT(video_id) DO UPDATE SET
+      channel_id = excluded.channel_id,
+      title = excluded.title,
+      published_at = excluded.published_at,
+      track_kind = excluded.track_kind,
+      fetched_at = excluded.fetched_at
+  `);
+  const deleteVideoCuesStmt = db.prepare(
+    "DELETE FROM cues WHERE video_id = ?",
+  );
+  const insertCueStmt = db.prepare(`
+    INSERT INTO cues (video_id, idx, start_seconds, end_seconds, text)
+    VALUES (@videoId, @idx, @startSeconds, @endSeconds, @text)
+  `);
+  const indexedVideosStmt = db.prepare(`
+    SELECT v.video_id AS video_id, v.title AS title,
+           v.published_at AS published_at, v.track_kind AS track_kind,
+           v.fetched_at AS fetched_at, COUNT(c.cue_id) AS cue_count
+    FROM videos v LEFT JOIN cues c ON c.video_id = v.video_id
+    WHERE v.channel_id = ? GROUP BY v.video_id
+  `);
+  const countFreshStmt = db.prepare(`
+    SELECT COUNT(*) AS count FROM videos v
+    WHERE v.channel_id = ? AND v.fetched_at > ?
+      AND EXISTS (SELECT 1 FROM cues c WHERE c.video_id = v.video_id)
+  `);
+  const purgeStmt = db.prepare(`
+    DELETE FROM cues WHERE video_id IN (
+      SELECT video_id FROM videos WHERE fetched_at <= ?
+    )
+  `);
+  const deleteChannelCuesStmt = db.prepare(`
+    DELETE FROM cues WHERE video_id IN (
+      SELECT video_id FROM videos WHERE channel_id = ?
+    )
+  `);
+  const deleteChannelVideosStmt = db.prepare(
+    "DELETE FROM videos WHERE channel_id = ?",
+  );
+
   const trySpendTx = db.transaction(
     (day: string, units: number, cap: number): boolean => {
       const row = spentStmt.get(day) as { spent: number } | undefined;
@@ -83,6 +193,37 @@ export function openArchiveStore(path: string): ArchiveStore {
       return true;
     },
   );
+
+  const saveVideoTx = db.transaction(
+    (args: {
+      channelId: string;
+      videoId: string;
+      title: string;
+      publishedAt: string;
+      trackKind: string;
+      fetchedAt: string;
+      cues: CaptionCue[];
+    }): void => {
+      upsertVideoStmt.run({
+        videoId: args.videoId,
+        channelId: args.channelId,
+        title: args.title,
+        publishedAt: args.publishedAt,
+        trackKind: args.trackKind,
+        fetchedAt: args.fetchedAt,
+      });
+      deleteVideoCuesStmt.run(args.videoId);
+      for (const cue of args.cues) {
+        insertCueStmt.run({ videoId: args.videoId, ...cue });
+      }
+    },
+  );
+
+  const deleteChannelTx = db.transaction((channelId: string): void => {
+    deleteChannelCuesStmt.run(channelId);
+    deleteChannelVideosStmt.run(channelId);
+    deleteCreatorStmt.run(channelId);
+  });
 
   return {
     saveCreator(row) {
@@ -99,8 +240,8 @@ export function openArchiveStore(path: string): ArchiveStore {
     listCreators() {
       return listStmt.all() as CreatorRow[];
     },
-    deleteCreator(channelId) {
-      deleteStmt.run(channelId);
+    deleteChannel(channelId) {
+      deleteChannelTx(channelId);
     },
     getSpent(day) {
       const row = spentStmt.get(day) as { spent: number } | undefined;
@@ -108,6 +249,22 @@ export function openArchiveStore(path: string): ArchiveStore {
     },
     trySpend(day, units, cap = DAILY_BUDGET_UNITS) {
       return trySpendTx(day, units, cap);
+    },
+    saveVideoWithCues(args) {
+      saveVideoTx(args);
+    },
+    getIndexedVideos(channelId) {
+      return indexedVideosStmt.all(channelId) as StoredVideo[];
+    },
+    countFreshVideos(channelId, now) {
+      const row = countFreshStmt.get(
+        channelId,
+        freshnessCutoff(now),
+      ) as { count: number };
+      return row.count;
+    },
+    purgeExpired(now) {
+      return purgeStmt.run(freshnessCutoff(now)).changes;
     },
     close() {
       db.close();

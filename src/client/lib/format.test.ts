@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatDate,
+  formatStamp,
   timeWindowLabel,
   videoIdFromUrl,
   youtubeEmbedUrl,
@@ -70,6 +71,25 @@ describe("youtubeEmbedUrl", () => {
     expect(youtubeEmbedUrl("dQw4w9WgXcQ")).toBe(
       "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0&modestbranding=1",
     );
+  });
+
+  it("starts the embed at the verified second", () => {
+    expect(youtubeEmbedUrl("dQw4w9WgXcQ", 61)).toBe(
+      "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0&modestbranding=1&start=61",
+    );
+    expect(youtubeEmbedUrl("dQw4w9WgXcQ", 61.7)).toContain("&start=61");
+    expect(youtubeEmbedUrl("dQw4w9WgXcQ", 0)).not.toContain("start=");
+    expect(youtubeEmbedUrl("dQw4w9WgXcQ", -5)).not.toContain("start=");
+  });
+});
+
+describe("formatStamp", () => {
+  it("formats whole seconds as M:SS", () => {
+    expect(formatStamp(0)).toBe("0:00");
+    expect(formatStamp(5)).toBe("0:05");
+    expect(formatStamp(61)).toBe("1:01");
+    expect(formatStamp(61.7)).toBe("1:01");
+    expect(formatStamp(-3)).toBe("0:00");
   });
 });
 

@@ -60,9 +60,18 @@ function cleanVideoId(id: string): string {
   return /^[A-Za-z0-9_-]+$/.test(id) ? id : "";
 }
 
-/** Privacy-enhanced embed URL for a video ID. */
-export function youtubeEmbedUrl(videoId: string): string {
-  return `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1`;
+/** Privacy-enhanced embed URL for a video ID, starting at `startSeconds`. */
+export function youtubeEmbedUrl(videoId: string, startSeconds = 0): string {
+  const base = `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1`;
+  return startSeconds > 0
+    ? `${base}&start=${Math.floor(startSeconds)}`
+    : base;
+}
+
+/** Whole seconds to M:SS, e.g. 61 -> "1:01". */
+export function formatStamp(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
 /** ISO timestamp to YYYY-MM-DD, or "" when missing/unparseable. */

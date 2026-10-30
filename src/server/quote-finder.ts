@@ -7,13 +7,16 @@ import type { ArchiveStore } from "./archive/store";
 import { loadConfig, requireKey } from "./config";
 import { authHeaders, createLlmClient, type LlmClient } from "./llm-client";
 import {
+  CHANNELS_LIST_COST,
+  PLAYLIST_ITEMS_COST,
   SEARCH_LIST_COST,
   VIDEOS_LIST_COST,
   searchChannel,
   searchEverywhere,
-  type ApiCallReporter,
+  type CountedApiCall,
   type EngineOutput,
   type ProgressFn,
+  type QuotaReserve,
   type VideoMeta,
 } from "./youtube";
 
@@ -492,13 +495,25 @@ export async function locateQuote(
   // error) must not end the request: continue to the memory fallback (§7.1, §7.3).
   // A spent quota skips the engine without calling YouTube at all.
   const searchQuota = deps.searchQuota;
-  const reportApiCall: ApiCallReporter | undefined = searchQuota
+  // Every YouTube call reserves its own cost before it is made. A failed
+  // reservation throws, so the call never happens and the engine's failure
+  // path answers from memory with the quota note.
+  const searchCosts: Record<CountedApiCall, number> = {
+    "search.list": SEARCH_LIST_COST,
+    "videos.list": VIDEOS_LIST_COST,
+    "channels.list": CHANNELS_LIST_COST,
+    "playlistItems.list": PLAYLIST_ITEMS_COST,
+  };
+  const reserveSearchQuota: QuotaReserve | undefined = searchQuota
     ? (endpoint) => {
-        searchQuota.store.recordSpend(
+        const reserved = searchQuota.store.trySpend(
           searchQuota.day,
-          endpoint === "search.list" ? SEARCH_LIST_COST : VIDEOS_LIST_COST,
+          searchCosts[endpoint],
           "search",
         );
+        if (!reserved) {
+          throw new Error(SEARCH_QUOTA_SPENT_NOTE);
+        }
       }
     : undefined;
   let engine: EngineOutput;
@@ -515,14 +530,14 @@ export async function locateQuote(
             sinceDays: input.sinceDays,
             apiKey: youtubeApiKey,
             onProgress,
-            onApiCall: reportApiCall,
+            reserveQuota: reserveSearchQuota,
           })
         : await searchEverywhere({
             quote,
             variants,
             apiKey: youtubeApiKey,
             onProgress,
-            onApiCall: reportApiCall,
+            reserveQuota: reserveSearchQuota,
           });
     } catch (error) {
       engineError =
@@ -530,14 +545,17 @@ export async function locateQuote(
       engine = emptyEngine();
     }
   }
-  const engineNotes = engineError
-    ? [`YouTube search failed (${engineError}), so the answer comes from memory`]
-    : [];
-  const searchNotes = deps.skipEngine
-    ? [SEARCH_QUOTA_SPENT_NOTE]
-    : engineError
-      ? []
-      : [searchNote(engine)];
+  const quotaHitMidRun = engineError === SEARCH_QUOTA_SPENT_NOTE;
+  const engineNotes =
+    engineError && !quotaHitMidRun
+      ? [`YouTube search failed (${engineError}), so the answer comes from memory`]
+      : [];
+  const searchNotes =
+    deps.skipEngine || quotaHitMidRun
+      ? [SEARCH_QUOTA_SPENT_NOTE]
+      : engineError
+        ? []
+        : [searchNote(engine)];
 
   const shortlistUrls = new Set(
     engine.shortlist.map((video) => youtubeWatchUrl(video.id)),

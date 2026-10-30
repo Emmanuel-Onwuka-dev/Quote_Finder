@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  CHANNELS_LIST_COST,
+  PLAYLIST_ITEMS_COST,
   SEARCH_LIST_COST,
   VIDEOS_LIST_COST,
   filterAfter,
@@ -342,6 +344,8 @@ describe("API call reporting", () => {
   it("reports every search.list and videos.list call in order", async () => {
     expect(SEARCH_LIST_COST).toBe(100);
     expect(VIDEOS_LIST_COST).toBe(1);
+    expect(CHANNELS_LIST_COST).toBe(1);
+    expect(PLAYLIST_ITEMS_COST).toBe(1);
     stubCalls({
       "/youtube/v3/search": { items: [{ id: { videoId: "vid1" } }] },
       "/youtube/v3/videos": VIDEO_DETAILS,
@@ -352,7 +356,7 @@ describe("API call reporting", () => {
       variants: ["variant one", "variant two"],
       apiKey: "test-key",
       onProgress: () => {},
-      onApiCall: (endpoint) => calls.push(endpoint),
+      reserveQuota: (endpoint) => calls.push(endpoint),
     });
     expect(calls).toEqual([
       "search.list",
@@ -403,10 +407,15 @@ describe("API call reporting", () => {
       sinceDays: 0,
       apiKey: "test-key",
       onProgress: () => {},
-      onApiCall: (endpoint) => calls.push(endpoint),
+      reserveQuota: (endpoint) => calls.push(endpoint),
     });
     expect(result.videoCount).toBe(0);
+    // Handle lookup + channel header + uploads page, then the in-channel
+    // quote search and its variant, each with a details lookup.
     expect(calls).toEqual([
+      "channels.list",
+      "channels.list",
+      "playlistItems.list",
       "search.list",
       "videos.list",
       "search.list",
@@ -436,10 +445,42 @@ describe("API call reporting", () => {
       sinceDays: 0,
       apiKey: "test-key",
       onProgress: () => {},
-      onApiCall: (endpoint) => calls.push(endpoint),
+      reserveQuota: (endpoint) => calls.push(endpoint),
     });
-    // Resolve-by-name search plus the quote search; the quote search finds
-    // no videos, so no details lookup runs.
-    expect(calls).toEqual(["search.list", "search.list"]);
+    // Resolve-by-name search, channel header, and uploads page, plus the
+    // quote search; the quote search finds no videos, so no details
+    // lookup runs.
+    expect(calls).toEqual([
+      "search.list",
+      "channels.list",
+      "playlistItems.list",
+      "search.list",
+    ]);
+  });
+
+  it("never makes a call whose reservation throws", async () => {
+    const seen: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        seen.push(new URL(url).pathname);
+        return new Response(JSON.stringify({ items: [] }), { status: 200 });
+      }),
+    );
+    const calls: string[] = [];
+    await expect(
+      searchEverywhere({
+        quote: "anything",
+        variants: [],
+        apiKey: "test-key",
+        onProgress: () => {},
+        reserveQuota: (endpoint) => {
+          calls.push(endpoint);
+          throw new Error("quota spent");
+        },
+      }),
+    ).rejects.toThrow("quota spent");
+    expect(calls).toEqual(["search.list"]);
+    expect(seen).toEqual([]);
   });
 });

@@ -41,10 +41,19 @@ const VARIANT_QUERY_LIMIT = 3;
 /** YouTube Data API quota costs counted against the search budget. */
 export const SEARCH_LIST_COST = 100;
 export const VIDEOS_LIST_COST = 1;
+export const CHANNELS_LIST_COST = 1;
+export const PLAYLIST_ITEMS_COST = 1;
 
-/** Reports one counted API call (search.list or videos.list) upstream.
- * Called when the request is made, whether or not it succeeds. */
-export type ApiCallReporter = (endpoint: "search.list" | "videos.list") => void;
+/** Every YouTube endpoint the engine calls that costs quota. */
+export type CountedApiCall =
+  | "search.list"
+  | "videos.list"
+  | "channels.list"
+  | "playlistItems.list";
+
+/** Reserves quota for one counted call before it is made.
+ * Must throw when the reservation fails, so the call is never made. */
+export type QuotaReserve = (endpoint: CountedApiCall) => void;
 
 async function fetchYt(path: string): Promise<unknown> {
   const res = await fetch(`${API}${path}`, {
@@ -141,7 +150,9 @@ function isChannelsResponse(value: unknown): value is ChannelsResponse {
 async function channelHeaderFor(
   channelId: string,
   apiKey: string,
+  reserveQuota?: QuotaReserve,
 ): Promise<ChannelHeader> {
+  reserveQuota?.("channels.list");
   const data: unknown = await fetchYt(
     `/channels?part=snippet,contentDetails&id=${encodeURIComponent(channelId)}&key=${encodeURIComponent(apiKey)}`,
   );
@@ -163,13 +174,14 @@ async function channelHeaderFor(
 export async function resolveChannel(
   creator: string,
   apiKey: string,
-  onApiCall?: ApiCallReporter,
+  reserveQuota?: QuotaReserve,
 ): Promise<ChannelHeader> {
   const parsed = parseCreatorInput(creator);
   if (parsed.kind === "channelId") {
-    return channelHeaderFor(parsed.value, apiKey);
+    return channelHeaderFor(parsed.value, apiKey, reserveQuota);
   }
   if (parsed.kind === "handle") {
+    reserveQuota?.("channels.list");
     const data: unknown = await fetchYt(
       `/channels?part=snippet,contentDetails&forHandle=${encodeURIComponent(parsed.value)}&key=${encodeURIComponent(apiKey)}`,
     );
@@ -177,9 +189,9 @@ export async function resolveChannel(
       throw new Error(`No channel found for @${parsed.value}`);
     }
     const id = data.items[0].id;
-    return channelHeaderFor(id, apiKey);
+    return channelHeaderFor(id, apiKey, reserveQuota);
   }
-  onApiCall?.("search.list");
+  reserveQuota?.("search.list");
   const data: unknown = await fetchYt(
     `/search?part=snippet&type=channel&maxResults=1&q=${encodeURIComponent(parsed.value)}&key=${encodeURIComponent(apiKey)}`,
   );
@@ -188,7 +200,7 @@ export async function resolveChannel(
   if (!channelId) {
     throw new Error(`No channel found for "${parsed.value}"`);
   }
-  return channelHeaderFor(channelId, apiKey);
+  return channelHeaderFor(channelId, apiKey, reserveQuota);
 }
 
 // --- Upload index (§5.2): in-memory, one request, never persisted ---
@@ -202,7 +214,9 @@ export async function listUploadsPage(
   playlistId: string,
   apiKey: string,
   pageToken?: string,
+  reserveQuota?: QuotaReserve,
 ): Promise<UploadsPage> {
+  reserveQuota?.("playlistItems.list");
   const data: unknown = await fetchYt(
     `/playlistItems?part=snippet&maxResults=50&playlistId=${encodeURIComponent(playlistId)}&key=${encodeURIComponent(apiKey)}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`,
   );
@@ -229,11 +243,12 @@ export async function listUploads(
   playlistId: string,
   apiKey: string,
   max = MAX_INDEX_VIDEOS,
+  reserveQuota?: QuotaReserve,
 ): Promise<VideoMeta[]> {
   const videos: VideoMeta[] = [];
   let pageToken: string | undefined;
   while (videos.length < max) {
-    const page = await listUploadsPage(playlistId, apiKey, pageToken);
+    const page = await listUploadsPage(playlistId, apiKey, pageToken, reserveQuota);
     for (const video of page.videos) {
       videos.push(video);
       if (videos.length >= max) {
@@ -251,12 +266,12 @@ export async function listUploads(
 export async function videosById(
   ids: string[],
   apiKey: string,
-  onApiCall?: ApiCallReporter,
+  reserveQuota?: QuotaReserve,
 ): Promise<VideoMeta[]> {
   const videos: VideoMeta[] = [];
   for (let i = 0; i < ids.length; i += 50) {
     const batch = ids.slice(i, i + 50);
-    onApiCall?.("videos.list");
+    reserveQuota?.("videos.list");
     const data: unknown = await fetchYt(
       `/videos?part=snippet&id=${batch.map(encodeURIComponent).join(",")}&key=${encodeURIComponent(apiKey)}`,
     );
@@ -281,9 +296,9 @@ async function searchVideos(
   apiKey: string,
   channelId?: string,
   maxResults = 15,
-  onApiCall?: ApiCallReporter,
+  reserveQuota?: QuotaReserve,
 ): Promise<VideoMeta[]> {
-  onApiCall?.("search.list");
+  reserveQuota?.("search.list");
   const data: unknown = await fetchYt(
     `/search?part=snippet&type=video&maxResults=${maxResults}&q=${encodeURIComponent(query)}&key=${encodeURIComponent(apiKey)}${channelId ? `&channelId=${encodeURIComponent(channelId)}` : ""}`,
   );
@@ -293,7 +308,7 @@ async function searchVideos(
   if (ids.length === 0) {
     return [];
   }
-  return videosById(ids, apiKey, onApiCall);
+  return videosById(ids, apiKey, reserveQuota);
 }
 
 // The quote plus the Muse variants, merged in order (§5.4 step 4).
@@ -302,12 +317,12 @@ async function searchQueries(
   variants: string[],
   apiKey: string,
   channelId: string,
-  onApiCall?: ApiCallReporter,
+  reserveQuota?: QuotaReserve,
 ): Promise<VideoMeta[]> {
-  const found = await searchVideos(quote, apiKey, channelId, 15, onApiCall);
+  const found = await searchVideos(quote, apiKey, channelId, 15, reserveQuota);
   for (const variant of variants.slice(0, VARIANT_QUERY_LIMIT)) {
     found.push(
-      ...(await searchVideos(variant, apiKey, channelId, 8, onApiCall)),
+      ...(await searchVideos(variant, apiKey, channelId, 8, reserveQuota)),
     );
   }
   return found;
@@ -397,24 +412,31 @@ export interface ChannelSearchInput {
   sinceDays: number;
   apiKey: string;
   onProgress: ProgressFn;
-  onApiCall?: ApiCallReporter;
+  reserveQuota?: QuotaReserve;
 }
 
 export async function searchChannel(
   input: ChannelSearchInput,
 ): Promise<EngineOutput> {
-  const { quote, variants, creator, sinceDays, apiKey, onProgress, onApiCall } =
+  const { quote, variants, creator, sinceDays, apiKey, onProgress, reserveQuota } =
     input;
   const counter = { scanned: 0 };
   onProgress("Resolving channel", creator);
-  const header = await resolveChannel(creator, apiKey, onApiCall);
+  const header = await resolveChannel(creator, apiKey, reserveQuota);
   const publishedAfter = toPublishedAfter(sinceDays);
 
   let ranked: VideoMeta[] = [];
   let indexSize = 0;
   try {
     onProgress("Indexing uploads", header.channelTitle);
-    const index = (await listUploads(header.uploadsPlaylistId, apiKey)).map(
+    const index = (
+      await listUploads(
+        header.uploadsPlaylistId,
+        apiKey,
+        MAX_INDEX_VIDEOS,
+        reserveQuota,
+      )
+    ).map(
       (video) => ({ ...video, channelTitle: header.channelTitle }),
     );
     indexSize = index.length;
@@ -439,7 +461,7 @@ export async function searchChannel(
       variants,
       apiKey,
       header.channelId,
-      onApiCall,
+      reserveQuota,
     );
     const shortlist = mergeShortlist([], searched);
     const hits = scorePool(quote, shortlist, onProgress, counter);
@@ -458,7 +480,7 @@ export async function searchChannel(
     variants,
     apiKey,
     header.channelId,
-    onApiCall,
+    reserveQuota,
   );
   const shortlist = mergeShortlist(ranked, searched);
   const hits = scorePool(quote, shortlist, onProgress, counter);
@@ -477,21 +499,21 @@ export interface EverywhereSearchInput {
   variants: string[];
   apiKey: string;
   onProgress: ProgressFn;
-  onApiCall?: ApiCallReporter;
+  reserveQuota?: QuotaReserve;
 }
 
 export async function searchEverywhere(
   input: EverywhereSearchInput,
 ): Promise<EngineOutput> {
-  const { quote, variants, apiKey, onProgress, onApiCall } = input;
+  const { quote, variants, apiKey, onProgress, reserveQuota } = input;
   const counter = { scanned: 0 };
   onProgress("Indexing uploads", "searching all of YouTube");
-  const quoted = await searchVideos(`"${quote}"`, apiKey, undefined, 12, onApiCall);
-  const bare = await searchVideos(quote, apiKey, undefined, 12, onApiCall);
+  const quoted = await searchVideos(`"${quote}"`, apiKey, undefined, 12, reserveQuota);
+  const bare = await searchVideos(quote, apiKey, undefined, 12, reserveQuota);
   const extra: VideoMeta[] = [];
   for (const variant of variants.slice(0, VARIANT_QUERY_LIMIT)) {
     extra.push(
-      ...(await searchVideos(variant, apiKey, undefined, 8, onApiCall)),
+      ...(await searchVideos(variant, apiKey, undefined, 8, reserveQuota)),
     );
   }
   const shortlist = mergeShortlist(quoted, [...bare, ...extra]);

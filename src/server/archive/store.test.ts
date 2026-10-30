@@ -208,18 +208,6 @@ describe("daily budget", () => {
       store.close();
     }
   });
-
-  it("records search spend unconditionally, past the cap", () => {
-    const store = openMemory();
-    try {
-      store.recordSpend("2026-10-30", 2900, "search");
-      store.recordSpend("2026-10-30", 500, "search");
-      expect(store.getSpent("2026-10-30", "search")).toBe(3400);
-      expect(store.getSpent("2026-10-30")).toBe(0);
-    } finally {
-      store.close();
-    }
-  });
 });
 
 describe("viewer refresh tracking", () => {

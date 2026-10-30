@@ -57,8 +57,6 @@ export interface ArchiveStore {
   deleteChannel(channelId: string): void;
   getSpent(day: string, kind?: BudgetKind): number;
   trySpend(day: string, units: number, kind?: BudgetKind): boolean;
-  /** Record spend unconditionally (no cap check); the caller gates. */
-  recordSpend(day: string, units: number, kind: BudgetKind): void;
   saveVideoWithCues(args: {
     channelId: string;
     videoId: string;
@@ -331,15 +329,6 @@ export function openArchiveStore(path: string): ArchiveStore {
     },
   );
 
-  const recordSpendTx = db.transaction(
-    (day: string, units: number, kind: BudgetKind): void => {
-      const row = spentStmt.get(day, kind) as
-        | { spent: number }
-        | undefined;
-      upsertSpentStmt.run({ day, kind, spent: (row?.spent ?? 0) + units });
-    },
-  );
-
   const saveVideoTx = db.transaction(
     (args: {
       channelId: string;
@@ -398,9 +387,6 @@ export function openArchiveStore(path: string): ArchiveStore {
     },
     trySpend(day, units, kind: BudgetKind = "creator") {
       return trySpendTx(day, units, kind);
-    },
-    recordSpend(day, units, kind) {
-      recordSpendTx(day, units, kind);
     },
     lastChannelRefreshAt(channelId) {
       const row = lastRefreshStmt.get(channelId) as { at: string | null };

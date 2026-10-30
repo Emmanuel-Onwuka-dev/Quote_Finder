@@ -414,11 +414,83 @@ describe("search quota", () => {
       expect(res.status).toBe(200);
       const events = parseSse(await res.text());
       expect(events.at(-1)?.event).toBe("result");
-      // @tester: 2 channels.list (uncounted) + 1 playlist (uncounted) +
+      // @tester: 2 channels.list + 1 playlistItems.list +
       // 3 searches x (100 + 1 details).
-      expect(store.getSpent(todayKey(), "search")).toBe(303);
+      expect(store.getSpent(todayKey(), "search")).toBe(306);
       expect(store.getSpent(todayKey(), "creator")).toBe(0);
       expect(store.getSpent(todayKey(), "viewer")).toBe(0);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("stops mid-run with the quota note when a reservation fails", async () => {
+    const store = openArchiveStore(":memory:");
+    try {
+      expect(store.trySpend(todayKey(), 2900, "search")).toBe(true);
+      const { app, seen } = quotaApp(
+        [chatBody(VARIANTS_REPLY), chatBody(FALLBACK_MISS_REPLY)],
+        store,
+      );
+      const res = await postQuote(app, {
+        quote: "quantum bicycle",
+        creator: "@tester",
+        scene: "",
+        sinceDays: 0,
+      });
+      expect(res.status).toBe(200);
+      const events = parseSse(await res.text());
+      const results = events.filter((entry) => entry.event === "result");
+      expect(results).toHaveLength(1);
+      const notes = (results[0]?.data as { notes: string[] }).notes;
+      expect(notes).toContain(
+        "search quota spent for today — answering from memory",
+      );
+      // The engine started (2 channels + 1 playlist calls) then stopped at
+      // the first 100-unit search, which would have passed the cap.
+      expect(store.getSpent(todayKey(), "search")).toBe(2903);
+      expect(seen.some((href) => href.includes("www.googleapis.com"))).toBe(
+        true,
+      );
+      const stages = events
+        .filter((entry) => entry.event === "progress")
+        .map((entry) => (entry.data as { stage: string }).stage);
+      expect(stages).toContain("Resolving channel");
+    } finally {
+      store.close();
+    }
+  });
+
+  it("keeps parallel searches under the cap", async () => {
+    const store = openArchiveStore(":memory:");
+    try {
+      expect(store.trySpend(todayKey(), 2600, "search")).toBe(true);
+      const { app } = quotaApp(
+        Array.from({ length: 8 }, () => chatBody(VARIANTS_REPLY)),
+        store,
+      );
+      const body = {
+        quote: "quantum bicycle",
+        creator: "@tester",
+        scene: "",
+        sinceDays: 0,
+      };
+      const settled = await Promise.allSettled([
+        postQuote(app, body),
+        postQuote(app, body),
+        postQuote(app, body),
+        postQuote(app, body),
+      ]);
+      // Drain every stream: the engines run inside the SSE producers, so the
+      // spend is final only once all four bodies are fully read.
+      await Promise.all(
+        settled.map((entry) =>
+          entry.status === "fulfilled" ? entry.value.text() : "",
+        ),
+      );
+      const spent = store.getSpent(todayKey(), "search");
+      expect(spent).toBeGreaterThan(2600);
+      expect(spent).toBeLessThanOrEqual(3000);
     } finally {
       store.close();
     }

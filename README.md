@@ -58,6 +58,9 @@ archive, and only the matched lines are shown in results.
 - A4: caption-window matching — 3-to-6-cue windows scored with the shared
   fuzzy overlap, ASR confidence cap, archive search endpoint with on-miss
   ASR refresh, listed-creators scope, and the verified-timestamp result.
+- A5: viewer archive UI — creator picker on the search page, archive
+  result card (verified-timestamp embed, track label, matched caption
+  text), and miss/retry states.
 
 ## External services and libraries
 

@@ -42,6 +42,9 @@ downloads.
 - P3b: chat UI — session-only turns, live SSE progress, result card
   (nocookie embed, unverified notice), candidate list, `openExternal`
   links, original SVG brand, SEO tags, and lib unit tests.
+- A1: creator archive foundation — Google OAuth (PKCE) connect/disconnect
+  for creators, encrypted refresh-token storage in SQLite, `/creator`
+  page, and endpoint tests with mocked Google responses.
 
 ## External services and libraries
 

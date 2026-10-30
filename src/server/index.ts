@@ -2,6 +2,8 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { existsSync } from "node:fs";
+import { createArchiveRoutes } from "./archive/routes";
+import { loadConfig } from "./config";
 import { createQuoteStreamHandler } from "./quote-stream";
 
 const app = new Hono();
@@ -9,6 +11,18 @@ const app = new Hono();
 app.get("/api/health", (c) => c.json({ ok: true, service: "quotefinder" }));
 
 app.post("/api/quote-stream", createQuoteStreamHandler());
+
+const archiveConfig = loadConfig();
+app.route(
+  "/api/archive",
+  createArchiveRoutes({
+    googleClientId: archiveConfig.googleClientId,
+    googleClientSecret: archiveConfig.googleClientSecret,
+    googleRedirectUri: archiveConfig.googleRedirectUri,
+    archiveTokenKey: archiveConfig.archiveTokenKey,
+    archiveDbPath: archiveConfig.archiveDbPath,
+  }),
+);
 
 // In production (`vite build` output present), serve the client bundle.
 if (existsSync("./dist/index.html")) {

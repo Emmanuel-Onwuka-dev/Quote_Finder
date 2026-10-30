@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { LogoMark } from "./components/Brand";
 import { Composer, type SearchInput } from "./components/Composer";
 import { Turn, type TurnState } from "./components/Turn";
@@ -8,13 +8,42 @@ import {
   type ProgressUpdate,
 } from "./hooks/useQuoteStream";
 import { timeWindowLabel } from "./lib/format";
+import { shouldFollowToBottom } from "./lib/scroll";
 
 export default function App() {
   const [turns, setTurns] = useState<TurnState[]>([]);
   const [composerError, setComposerError] = useState<string | null>(null);
   const [resetKey, setResetKey] = useState(0);
   const nextId = useRef(1);
+  const forceFollowRef = useRef(false);
   const { running, start } = useQuoteStream();
+
+  // Chat-style follow: keep the newest turn's latest content in view above
+  // the composer as progress streams in and the result lands. Never yanks
+  // the user away from history they scrolled up to read — except right
+  // after their own submit/retry, which always brings the new turn into view.
+  useEffect(() => {
+    if (turns.length === 0) return;
+    const force = forceFollowRef.current;
+    forceFollowRef.current = false;
+    if (
+      !shouldFollowToBottom({
+        scrollY: window.scrollY,
+        viewportHeight: window.innerHeight,
+        contentHeight: document.documentElement.scrollHeight,
+        force,
+      })
+    ) {
+      return;
+    }
+    const reduceMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    window.scrollTo({
+      top: document.documentElement.scrollHeight,
+      behavior: reduceMotion ? "auto" : "smooth",
+    });
+  }, [turns]);
 
   const updateTurn = useCallback((id: number, patch: Partial<TurnState>) => {
     setTurns((prev) =>
@@ -27,6 +56,7 @@ export default function App() {
       const id = nextId.current++;
       const window = timeWindowLabel(input.sinceDays);
       setComposerError(null);
+      forceFollowRef.current = true;
       let started = false;
       start(input, {
         onStarted: () => {
@@ -95,6 +125,11 @@ export default function App() {
             Say it however you remember it — the wording doesn&apos;t have to
             be right.
           </p>
+          <p className="mt-2">
+            <a href="/creator" className="text-sm text-accent underline">
+              For creators: connect your channel
+            </a>
+          </p>
         </header>
 
         <main className="flex-1 pb-8">
@@ -116,7 +151,7 @@ export default function App() {
           )}
         </main>
 
-        <div className="bg-background pb-6 pt-2 md:sticky md:bottom-0">
+        <div className="bg-background pb-6 pt-2">
           <Composer
             disabled={running}
             serverError={composerError}

@@ -57,6 +57,8 @@ export interface ArchiveStore {
   deleteChannel(channelId: string): void;
   getSpent(day: string, kind?: BudgetKind): number;
   trySpend(day: string, units: number, kind?: BudgetKind): boolean;
+  /** Record spend unconditionally (no cap check); the caller gates. */
+  recordSpend(day: string, units: number, kind: BudgetKind): void;
   saveVideoWithCues(args: {
     channelId: string;
     videoId: string;
@@ -85,8 +87,9 @@ export interface ArchiveStore {
   close(): void;
 }
 
-/** Daily budget kind: creator indexing vs viewer-triggered refresh. */
-export type BudgetKind = "creator" | "viewer";
+/** Daily budget kind: creator indexing, viewer-triggered refresh, or
+ * main quote search. */
+export type BudgetKind = "creator" | "viewer" | "search";
 
 /** Daily creator-indexing budget: 5,000 units, about 20 videos. */
 export const DAILY_BUDGET_UNITS = 5000;
@@ -94,8 +97,17 @@ export const DAILY_BUDGET_UNITS = 5000;
 /** Daily viewer-refresh budget: 1,000 units, about 4 videos. */
 export const VIEWER_BUDGET_UNITS = 1000;
 
+/** Daily main-search budget: 3,000 units of YouTube API quota. */
+export const SEARCH_BUDGET_UNITS = 3000;
+
 function budgetCap(kind: BudgetKind): number {
-  return kind === "viewer" ? VIEWER_BUDGET_UNITS : DAILY_BUDGET_UNITS;
+  if (kind === "viewer") {
+    return VIEWER_BUDGET_UNITS;
+  }
+  if (kind === "search") {
+    return SEARCH_BUDGET_UNITS;
+  }
+  return DAILY_BUDGET_UNITS;
 }
 
 /** §4.3 caption retention: cue text is purged after 30 days. */
@@ -319,6 +331,15 @@ export function openArchiveStore(path: string): ArchiveStore {
     },
   );
 
+  const recordSpendTx = db.transaction(
+    (day: string, units: number, kind: BudgetKind): void => {
+      const row = spentStmt.get(day, kind) as
+        | { spent: number }
+        | undefined;
+      upsertSpentStmt.run({ day, kind, spent: (row?.spent ?? 0) + units });
+    },
+  );
+
   const saveVideoTx = db.transaction(
     (args: {
       channelId: string;
@@ -377,6 +398,9 @@ export function openArchiveStore(path: string): ArchiveStore {
     },
     trySpend(day, units, kind: BudgetKind = "creator") {
       return trySpendTx(day, units, kind);
+    },
+    recordSpend(day, units, kind) {
+      recordSpendTx(day, units, kind);
     },
     lastChannelRefreshAt(channelId) {
       const row = lastRefreshStmt.get(channelId) as { at: string | null };

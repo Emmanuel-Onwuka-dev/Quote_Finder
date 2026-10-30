@@ -4,6 +4,7 @@
 
 import type { Context } from "hono";
 import { z } from "zod";
+import { SEARCH_BUDGET_UNITS, todayKey } from "./archive/store";
 import { locateQuote, type LocateDeps, type LocateInput } from "./quote-finder";
 
 export const QuoteStreamBodySchema = z.object({
@@ -81,8 +82,23 @@ export function createQuoteStreamHandler(deps: LocateDeps = {}) {
       const first = parsed.error.issues[0];
       return c.json({ message: first?.message ?? "invalid request body" }, 400);
     }
-    return new Response(quoteStream(parsed.data, deps), {
-      headers: SSE_HEADERS,
-    });
+    const quotaStore = deps.archiveStore;
+    const searchQuota = quotaStore
+      ? { store: quotaStore, day: todayKey() }
+      : undefined;
+    const quotaSpent = searchQuota
+      ? searchQuota.store.getSpent(searchQuota.day, "search") >=
+        SEARCH_BUDGET_UNITS
+      : false;
+    return new Response(
+      quoteStream(parsed.data, {
+        ...deps,
+        skipEngine: quotaSpent,
+        searchQuota,
+      }),
+      {
+        headers: SSE_HEADERS,
+      },
+    );
   };
 }

@@ -3,11 +3,15 @@
 // No transcripts anywhere: every confidence caps at medium.
 
 import { z } from "zod";
+import type { ArchiveStore } from "./archive/store";
 import { loadConfig, requireKey } from "./config";
 import { authHeaders, createLlmClient, type LlmClient } from "./llm-client";
 import {
+  SEARCH_LIST_COST,
+  VIDEOS_LIST_COST,
   searchChannel,
   searchEverywhere,
+  type ApiCallReporter,
   type EngineOutput,
   type ProgressFn,
   type VideoMeta,
@@ -108,6 +112,12 @@ export interface LocateDeps {
   youtubeApiKey?: string;
   onProgress?: ProgressFn;
   fetchFn?: typeof fetch;
+  /** Skip the YouTube engine and answer from memory (quota spent). */
+  skipEngine?: boolean;
+  /** Store + day for recording search quota spend. */
+  searchQuota?: { store: ArchiveStore; day: string };
+  /** Store for the search-budget pre-check (used by the handler). */
+  archiveStore?: ArchiveStore;
 }
 
 // --- Meta Model API: single-shot JSON chat (P3 streams progress) ---
@@ -391,6 +401,10 @@ function searchNote(engine: EngineOutput): string {
 const UNVERIFIED_NOTE =
   "no transcript was read, so the exact moment the line is said is not verified";
 
+const SEARCH_QUOTA_SPENT_NOTE =
+  "search quota spent for today — answering from memory";
+const SEARCH_QUOTA_SPENT = "search quota spent for today";
+
 function emptyEngine(): EngineOutput {
   return {
     shortlist: [],
@@ -417,7 +431,8 @@ function padCandidates(
   kept: QuoteCandidate[],
 ): QuoteCandidate[] {
   const seen = new Set(kept.map((candidate) => candidate.url));
-  const creator = engine.channelTitle || "YouTube";
+  const channelOf = (video: VideoMeta) =>
+    video.channelTitle || engine.channelTitle || "YouTube";
   const pads: QuoteCandidate[] = [];
   for (const hit of engine.hits) {
     const url = youtubeWatchUrl(hit.video.id);
@@ -428,7 +443,7 @@ function padCandidates(
     pads.push({
       url,
       title: hit.video.title,
-      creator,
+      creator: channelOf(hit.video),
       reason: `Title/description match · ${shortDate(hit.video.publishedAt)}`,
     });
   }
@@ -444,7 +459,7 @@ function padCandidates(
     pads.push({
       url,
       title: video.title,
-      creator,
+      creator: channelOf(video),
       reason: `Possible match · ${shortDate(video.publishedAt)}`,
     });
   }
@@ -475,32 +490,54 @@ export async function locateQuote(
 
   // 2. Search path + shortlist scoring. A YouTube failure (bad creator, API
   // error) must not end the request: continue to the memory fallback (§7.1, §7.3).
+  // A spent quota skips the engine without calling YouTube at all.
+  const searchQuota = deps.searchQuota;
+  const reportApiCall: ApiCallReporter | undefined = searchQuota
+    ? (endpoint) => {
+        searchQuota.store.recordSpend(
+          searchQuota.day,
+          endpoint === "search.list" ? SEARCH_LIST_COST : VIDEOS_LIST_COST,
+          "search",
+        );
+      }
+    : undefined;
   let engine: EngineOutput;
   let engineError = "";
-  try {
-    engine = creatorInput
-      ? await searchChannel({
-          quote,
-          variants,
-          creator: creatorInput,
-          sinceDays: input.sinceDays,
-          apiKey: youtubeApiKey,
-          onProgress,
-        })
-      : await searchEverywhere({
-          quote,
-          variants,
-          apiKey: youtubeApiKey,
-          onProgress,
-        });
-  } catch (error) {
-    engineError =
-      error instanceof Error ? error.message : "YouTube search failed";
+  if (deps.skipEngine) {
     engine = emptyEngine();
+  } else {
+    try {
+      engine = creatorInput
+        ? await searchChannel({
+            quote,
+            variants,
+            creator: creatorInput,
+            sinceDays: input.sinceDays,
+            apiKey: youtubeApiKey,
+            onProgress,
+            onApiCall: reportApiCall,
+          })
+        : await searchEverywhere({
+            quote,
+            variants,
+            apiKey: youtubeApiKey,
+            onProgress,
+            onApiCall: reportApiCall,
+          });
+    } catch (error) {
+      engineError =
+        error instanceof Error ? error.message : "YouTube search failed";
+      engine = emptyEngine();
+    }
   }
   const engineNotes = engineError
     ? [`YouTube search failed (${engineError}), so the answer comes from memory`]
     : [];
+  const searchNotes = deps.skipEngine
+    ? [SEARCH_QUOTA_SPENT_NOTE]
+    : engineError
+      ? []
+      : [searchNote(engine)];
 
   const shortlistUrls = new Set(
     engine.shortlist.map((video) => youtubeWatchUrl(video.id)),
@@ -549,7 +586,11 @@ export async function locateQuote(
     return {
       found: true,
       confidence: confidenceForScore(best.score),
-      creator: engine.channelTitle || creatorInput || "Unknown",
+      creator:
+        engine.channelTitle ||
+        best.video.channelTitle ||
+        creatorInput ||
+        "Unknown",
       videoTitle: best.video.title,
       videoUrl,
       publishedAt: best.video.publishedAt,
@@ -581,10 +622,13 @@ export async function locateQuote(
       fetchFn,
     );
   } catch {
+    if (deps.skipEngine) {
+      throw new Error(SEARCH_QUOTA_SPENT);
+    }
     const candidates = padCandidates(engine, []);
     const degradedNotes = [
       ...engineNotes,
-      ...(engineError ? [] : [searchNote(engine)]),
+      ...searchNotes,
       UNVERIFIED_NOTE,
       "the memory fallback was unavailable, so these candidates come only from title/description matching",
     ];
@@ -640,7 +684,7 @@ export async function locateQuote(
 
   const notes = [
     ...engineNotes,
-    ...(engineError ? [] : [searchNote(engine)]),
+    ...searchNotes,
     UNVERIFIED_NOTE,
     "the AI's answer is an estimate from memory, not a verified match",
   ];

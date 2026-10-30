@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
+import {
+  openArchiveStore,
+  todayKey,
+  type ArchiveStore,
+} from "./archive/store";
 import type { LlmClient } from "./llm-client";
 import { youtubeWatchUrl } from "./quote-finder";
 import {
@@ -250,6 +255,172 @@ describe("POST /api/quote-stream", () => {
       if (savedYtKey !== undefined) {
         process.env.YOUTUBE_API_KEY = savedYtKey;
       }
+    }
+  });
+});
+
+describe("search quota", () => {
+  const FALLBACK_MISS_REPLY = JSON.stringify({
+    found: false,
+    candidates: [
+      {
+        url: "https://www.youtube.com/watch?v=vid9",
+        title: "Memory pick",
+        reason: "AI suggestion",
+      },
+    ],
+  });
+
+  function quotaApp(
+    metaQueue: unknown[],
+    store: ArchiveStore,
+  ): { app: Hono; seen: string[] } {
+    const seen: string[] = [];
+    const base = makeFetch(metaQueue);
+    const fetchMock = (async (
+      url: string | URL | Request,
+    ): Promise<Response> => {
+      const href = String(url);
+      seen.push(href);
+      if (new URL(href).hostname === "www.youtube.com") {
+        return jsonResponse({ title: "Memory pick" });
+      }
+      return base(url);
+    }) as unknown as typeof fetch;
+    vi.stubGlobal("fetch", fetchMock);
+    const app = new Hono();
+    app.post(
+      "/api/quote-stream",
+      createQuoteStreamHandler({
+        llm: TEST_LLM,
+        youtubeApiKey: "yt-key",
+        fetchFn: fetchMock,
+        archiveStore: store,
+      }),
+    );
+    return { app, seen };
+  }
+
+  function postQuote(app: Hono, body: unknown): Promise<Response> {
+    return app.request("/api/quote-stream", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("answers from memory with a note when the search quota is spent", async () => {
+    const store = openArchiveStore(":memory:");
+    try {
+      expect(store.trySpend(todayKey(), 3000, "search")).toBe(true);
+      const { app, seen } = quotaApp(
+        [chatBody(VARIANTS_REPLY), chatBody(FALLBACK_MISS_REPLY)],
+        store,
+      );
+      const res = await postQuote(app, {
+        quote: "quantum bicycle",
+        creator: "@tester",
+        scene: "",
+        sinceDays: 0,
+      });
+      expect(res.status).toBe(200);
+      const events = parseSse(await res.text());
+      const results = events.filter((entry) => entry.event === "result");
+      expect(results).toHaveLength(1);
+      expect(results[0]?.data).toMatchObject({ found: false });
+      const notes = (results[0]?.data as { notes: string[] }).notes;
+      expect(notes).toContain(
+        "search quota spent for today — answering from memory",
+      );
+      expect(notes).toContain(
+        "the AI's answer is an estimate from memory, not a verified match",
+      );
+      const candidates = (results[0]?.data as { candidates: unknown[] })
+        .candidates;
+      expect(candidates).toHaveLength(1);
+      expect(seen.some((href) => href.includes("www.googleapis.com"))).toBe(
+        false,
+      );
+      const stages = events
+        .filter((entry) => entry.event === "progress")
+        .map((entry) => (entry.data as { stage: string }).stage);
+      expect(stages).not.toContain("Resolving channel");
+      expect(stages).toContain("Asking the model");
+    } finally {
+      store.close();
+    }
+  });
+
+  it("streams a quota error when Meta is also unavailable", async () => {
+    const store = openArchiveStore(":memory:");
+    try {
+      expect(store.trySpend(todayKey(), 3000, "search")).toBe(true);
+      let metaCalls = 0;
+      const fetchMock = (async (
+        url: string | URL | Request,
+      ): Promise<Response> => {
+        const parsed = new URL(String(url));
+        if (parsed.hostname === "meta.test") {
+          metaCalls += 1;
+          if (metaCalls > 1) {
+            return jsonResponse({}, 500);
+          }
+          return jsonResponse(chatBody(VARIANTS_REPLY));
+        }
+        throw new Error(`unexpected fetch: ${String(url)}`);
+      }) as unknown as typeof fetch;
+      vi.stubGlobal("fetch", fetchMock);
+      const app = new Hono();
+      app.post(
+        "/api/quote-stream",
+        createQuoteStreamHandler({
+          llm: TEST_LLM,
+          youtubeApiKey: "yt-key",
+          fetchFn: fetchMock,
+          archiveStore: store,
+        }),
+      );
+      const res = await postQuote(app, {
+        quote: "quantum bicycle",
+        creator: "",
+        scene: "",
+        sinceDays: 0,
+      });
+      expect(res.status).toBe(200);
+      const events = parseSse(await res.text());
+      expect(events.some((entry) => entry.event === "result")).toBe(false);
+      expect(events.at(-1)?.event).toBe("error");
+      expect(events.at(-1)?.data).toEqual({
+        message: "search quota spent for today",
+      });
+    } finally {
+      store.close();
+    }
+  });
+
+  it("records YouTube spend against the search budget", async () => {
+    const store = openArchiveStore(":memory:");
+    try {
+      const { app } = quotaApp(
+        [chatBody(VARIANTS_REPLY), chatBody(RANK_VID1_REPLY)],
+        store,
+      );
+      const res = await postQuote(app, {
+        quote: "quantum bicycle",
+        creator: "@tester",
+        scene: "",
+        sinceDays: 0,
+      });
+      expect(res.status).toBe(200);
+      const events = parseSse(await res.text());
+      expect(events.at(-1)?.event).toBe("result");
+      // @tester: 2 channels.list (uncounted) + 1 playlist (uncounted) +
+      // 3 searches x (100 + 1 details).
+      expect(store.getSpent(todayKey(), "search")).toBe(303);
+      expect(store.getSpent(todayKey(), "creator")).toBe(0);
+      expect(store.getSpent(todayKey(), "viewer")).toBe(0);
+    } finally {
+      store.close();
     }
   });
 });

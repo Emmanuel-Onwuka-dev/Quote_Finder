@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  SEARCH_LIST_COST,
+  VIDEOS_LIST_COST,
   filterAfter,
   listUploadsPage,
   mergeShortlist,
@@ -303,5 +305,141 @@ describe("listUploadsPage", () => {
     expect(second.videos.map((video) => video.id)).toEqual(["v2"]);
     expect(second.nextPageToken).toBeUndefined();
     expect(seen[1]).toContain("pageToken=tok123");
+  });
+});
+
+describe("API call reporting", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function stubCalls(routes: Record<string, unknown>): void {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = new URL(url).pathname;
+        return new Response(JSON.stringify(routes[path] ?? { items: [] }), {
+          status: 200,
+        });
+      }),
+    );
+  }
+
+  const VIDEO_DETAILS = {
+    items: [
+      {
+        id: "vid1",
+        snippet: {
+          title: "Some film",
+          description: "A film.",
+          publishedAt: "2026-10-01T00:00:00Z",
+          channelTitle: "Quantum Films",
+        },
+      },
+    ],
+  };
+
+  it("reports every search.list and videos.list call in order", async () => {
+    expect(SEARCH_LIST_COST).toBe(100);
+    expect(VIDEOS_LIST_COST).toBe(1);
+    stubCalls({
+      "/youtube/v3/search": { items: [{ id: { videoId: "vid1" } }] },
+      "/youtube/v3/videos": VIDEO_DETAILS,
+    });
+    const calls: string[] = [];
+    await searchEverywhere({
+      quote: "anything",
+      variants: ["variant one", "variant two"],
+      apiKey: "test-key",
+      onProgress: () => {},
+      onApiCall: (endpoint) => calls.push(endpoint),
+    });
+    expect(calls).toEqual([
+      "search.list",
+      "videos.list",
+      "search.list",
+      "videos.list",
+      "search.list",
+      "videos.list",
+      "search.list",
+      "videos.list",
+    ]);
+  });
+
+  it("counts calls made on the in-channel fallback path", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = new URL(url).pathname;
+        if (path === "/youtube/v3/playlistItems") {
+          return new Response("error", { status: 500 });
+        }
+        const routes: Record<string, unknown> = {
+          "/youtube/v3/channels": {
+            items: [
+              {
+                id: "UCchan1",
+                snippet: { title: "Test Channel" },
+                contentDetails: {
+                  relatedPlaylists: { uploads: "UUchan1" },
+                },
+              },
+            ],
+          },
+          "/youtube/v3/search": { items: [{ id: { videoId: "vid1" } }] },
+          "/youtube/v3/videos": VIDEO_DETAILS,
+        };
+        return new Response(
+          JSON.stringify(routes[path] ?? { items: [] }),
+          { status: 200 },
+        );
+      }),
+    );
+    const calls: string[] = [];
+    const result = await searchChannel({
+      quote: "anything",
+      variants: ["variant one"],
+      creator: "@tester",
+      sinceDays: 0,
+      apiKey: "test-key",
+      onProgress: () => {},
+      onApiCall: (endpoint) => calls.push(endpoint),
+    });
+    expect(result.videoCount).toBe(0);
+    expect(calls).toEqual([
+      "search.list",
+      "videos.list",
+      "search.list",
+      "videos.list",
+    ]);
+  });
+
+  it("counts channel resolution by name as a search call", async () => {
+    stubCalls({
+      "/youtube/v3/channels": {
+        items: [
+          {
+            id: "UCchan1",
+            snippet: { title: "Test Channel" },
+            contentDetails: { relatedPlaylists: { uploads: "UUchan1" } },
+          },
+        ],
+      },
+      "/youtube/v3/search": { items: [{ id: { channelId: "UCchan1" } }] },
+      "/youtube/v3/playlistItems": { items: [] },
+    });
+    const calls: string[] = [];
+    await searchChannel({
+      quote: "anything",
+      variants: [],
+      creator: "Some Creator",
+      sinceDays: 0,
+      apiKey: "test-key",
+      onProgress: () => {},
+      onApiCall: (endpoint) => calls.push(endpoint),
+    });
+    // Resolve-by-name search plus the quote search; the quote search finds
+    // no videos, so no details lookup runs.
+    expect(calls).toEqual(["search.list", "search.list"]);
   });
 });

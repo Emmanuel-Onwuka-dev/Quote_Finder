@@ -3,6 +3,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { existsSync } from "node:fs";
 import { createArchiveRoutes } from "./archive/routes";
+import { openArchiveStore } from "./archive/store";
 import { loadConfig } from "./config";
 import { createQuoteStreamHandler } from "./quote-stream";
 
@@ -10,9 +11,13 @@ const app = new Hono();
 
 app.get("/api/health", (c) => c.json({ ok: true, service: "quotefinder" }));
 
-app.post("/api/quote-stream", createQuoteStreamHandler());
-
 const archiveConfig = loadConfig();
+// One store handle shared by the archive routes and the main-search quota,
+// so all budgets live in the same database.
+const archiveStore = openArchiveStore(archiveConfig.archiveDbPath);
+
+app.post("/api/quote-stream", createQuoteStreamHandler({ archiveStore }));
+
 app.route(
   "/api/archive",
   createArchiveRoutes({
@@ -20,8 +25,8 @@ app.route(
     googleClientSecret: archiveConfig.googleClientSecret,
     googleRedirectUri: archiveConfig.googleRedirectUri,
     archiveTokenKey: archiveConfig.archiveTokenKey,
-    archiveDbPath: archiveConfig.archiveDbPath,
     youtubeApiKey: archiveConfig.youtubeApiKey,
+    store: archiveStore,
   }),
 );
 

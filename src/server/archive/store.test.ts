@@ -193,6 +193,33 @@ describe("daily budget", () => {
       rmdirSync(dir);
     }
   });
+
+  it("tracks the search budget independently of creator and viewer", () => {
+    const store = openMemory();
+    try {
+      expect(store.trySpend("2026-10-30", 3000, "search")).toBe(true);
+      expect(store.trySpend("2026-10-30", 1, "search")).toBe(false);
+      expect(store.getSpent("2026-10-30")).toBe(0);
+      expect(store.getSpent("2026-10-30", "viewer")).toBe(0);
+      expect(store.trySpend("2026-10-30", 5000)).toBe(true);
+      expect(store.trySpend("2026-10-30", 1000, "viewer")).toBe(true);
+      expect(store.getSpent("2026-10-30", "search")).toBe(3000);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("records search spend unconditionally, past the cap", () => {
+    const store = openMemory();
+    try {
+      store.recordSpend("2026-10-30", 2900, "search");
+      store.recordSpend("2026-10-30", 500, "search");
+      expect(store.getSpent("2026-10-30", "search")).toBe(3400);
+      expect(store.getSpent("2026-10-30")).toBe(0);
+    } finally {
+      store.close();
+    }
+  });
 });
 
 describe("viewer refresh tracking", () => {

@@ -227,15 +227,9 @@ function contextWith(shortlistTitles: string[] = []): PromptContext {
 
 describe("trustedCandidatesNote", () => {
   it("handles zero, one, and many", () => {
-    expect(trustedCandidatesNote(0)).toBe(
-      "no trusted candidates were available",
-    );
-    expect(trustedCandidatesNote(1)).toBe(
-      "only 1 trusted candidate was available",
-    );
-    expect(trustedCandidatesNote(4)).toBe(
-      "only 4 trusted candidates were available",
-    );
+    expect(trustedCandidatesNote(0)).toBe("No verified links were found.");
+    expect(trustedCandidatesNote(1)).toBe("Only 1 verified link was found.");
+    expect(trustedCandidatesNote(4)).toBe("Only 4 verified links were found.");
   });
 });
 
@@ -633,7 +627,9 @@ describe("locateQuote", () => {
       result.candidates.some((candidate) => candidate.url.includes("dead")),
     ).toBe(false);
     expect(
-      result.notes.some((note) => note.includes("dropped 2 dead links")),
+      result.notes.some((note) =>
+        note.includes("Removed 2 links that did not open"),
+      ),
     ).toBe(true);
     expect(
       result.candidates.some((candidate) =>
@@ -710,7 +706,7 @@ describe("locateQuote", () => {
     expect(result.found).toBe(false);
     expect(result.videoUrl).toBe("");
     expect(
-      result.notes.some((note) => note.includes("main link was dead")),
+      result.notes.some((note) => note.includes("main link did not open")),
     ).toBe(true);
   });
 
@@ -732,12 +728,10 @@ describe("locateQuote", () => {
     expect(result.found).toBe(false);
     expect(result.candidates.length).toBeGreaterThan(0);
     expect(
-      result.notes.some((note) => note.includes("fallback was unavailable")),
+      result.notes.some((note) => note.includes("could not answer from memory")),
     ).toBe(true);
     expect(
-      result.notes.some((note) =>
-        note.includes("trusted candidates were available"),
-      ),
+      result.notes.some((note) => note.includes("verified links were found")),
     ).toBe(true);
   });
 
@@ -931,7 +925,7 @@ describe("locateQuote", () => {
     );
     expect(result.found).toBe(false);
     expect(
-      result.notes.some((note) => note.includes("YouTube search failed")),
+      result.notes.some((note) => note.includes("video search failed")),
     ).toBe(true);
     expect(state.metaQueue).toHaveLength(0);
   });

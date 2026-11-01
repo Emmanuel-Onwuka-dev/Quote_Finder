@@ -477,21 +477,21 @@ function searchNote(engine: EngineOutput): string {
 }
 
 const UNVERIFIED_NOTE =
-  "no transcript was read, so the exact moment the line is said is not verified";
+  "We did not read the video's captions, so the exact moment the line is said is not verified";
 
 const SEARCH_QUOTA_SPENT_NOTE =
-  "search quota spent for today — answering from memory";
+  "Today's search limit is reached, so we are answering from memory.";
 const SEARCH_QUOTA_SPENT = "search quota spent for today";
 
 /** Candidate-count note with correct singular/plural (and no "only 0"). */
 export function trustedCandidatesNote(count: number): string {
   if (count <= 0) {
-    return "no trusted candidates were available";
+    return "No verified links were found.";
   }
   if (count === 1) {
-    return "only 1 trusted candidate was available";
+    return "Only 1 verified link was found.";
   }
-  return `only ${count} trusted candidates were available`;
+  return `Only ${count} verified links were found.`;
 }
 
 function emptyEngine(): EngineOutput {
@@ -648,14 +648,14 @@ export async function locateQuote(
           });
     } catch (error) {
       engineError =
-        error instanceof Error ? error.message : "YouTube search failed";
+        error instanceof Error ? error.message : "video search failed";
       engine = emptyEngine();
     }
   }
   const quotaHitMidRun = engineError === SEARCH_QUOTA_SPENT_NOTE;
   const engineNotes =
     engineError && !quotaHitMidRun
-      ? [`YouTube search failed (${engineError}), so the answer comes from memory`]
+      ? [`The video search failed (${engineError}), so we are answering from memory.`]
       : [];
   const searchNotes =
     deps.skipEngine || quotaHitMidRun
@@ -758,7 +758,7 @@ export async function locateQuote(
       ...engineNotes,
       ...searchNotes,
       UNVERIFIED_NOTE,
-      "the memory fallback was unavailable, so these candidates come only from title/description matching",
+      "We could not answer from memory, so these results come only from title and description matches.",
     ];
     if (candidates.length < CANDIDATE_TARGET) {
       degradedNotes.push(trustedCandidatesNote(candidates.length));
@@ -812,10 +812,12 @@ export async function locateQuote(
     ...engineNotes,
     ...searchNotes,
     UNVERIFIED_NOTE,
-    "the AI's answer is an estimate from memory, not a verified match",
+    "This is an estimate from memory, not a verified match.",
   ];
   if (dropped > 0) {
-    notes.push(`dropped ${dropped} dead link${dropped === 1 ? "" : "s"}`);
+    notes.push(
+      `Removed ${dropped} link${dropped === 1 ? "" : "s"} that did not open.`,
+    );
   }
   if (fallback.notes) {
     notes.push(fallback.notes);
@@ -845,7 +847,7 @@ export async function locateQuote(
   }
 
   if (fallback.found && fallback.videoUrl && !mainAlive) {
-    notes.push("the AI's main link was dead, so no confident answer is shown");
+    notes.push("The AI's main link did not open, so no confident answer is shown.");
   }
   return {
     found: false,

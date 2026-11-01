@@ -330,10 +330,10 @@ describe("search quota", () => {
       expect(results[0]?.data).toMatchObject({ found: false });
       const notes = (results[0]?.data as { notes: string[] }).notes;
       expect(notes).toContain(
-        "search quota spent for today — answering from memory",
+        "Today's search limit is reached, so we are answering from memory.",
       );
       expect(notes).toContain(
-        "the AI's answer is an estimate from memory, not a verified match",
+        "This is an estimate from memory, not a verified match.",
       );
       const candidates = (results[0]?.data as { candidates: unknown[] })
         .candidates;
@@ -371,7 +371,7 @@ describe("search quota", () => {
       expect(results).toHaveLength(1);
       const notes = (results[0]?.data as { notes: string[] }).notes;
       expect(notes).not.toContain(
-        "search quota spent for today — answering from memory",
+        "Today's search limit is reached, so we are answering from memory.",
       );
       expect(seen.some((href) => href.includes("www.googleapis.com"))).toBe(
         true,
@@ -474,7 +474,7 @@ describe("search quota", () => {
       expect(results).toHaveLength(1);
       const notes = (results[0]?.data as { notes: string[] }).notes;
       expect(notes).toContain(
-        "search quota spent for today — answering from memory",
+        "Today's search limit is reached, so we are answering from memory.",
       );
       // The engine started (2 channels + 1 playlist calls) then stopped at
       // the first 100-unit search, which would have passed the cap.

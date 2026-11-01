@@ -324,18 +324,20 @@ These extend the core flow. They are optional, but they show more of the Meta st
 - Reject files smaller than 2 KB, larger than 32 MB, or longer than 10 minutes.
 - Forward to `POST ${META_BASE_URL}/asr/transcribe` as a multipart form with a `request` JSON part (`{"mode":"PUSH_TO_TALK","model":"muse-voice-transcribe-1.0","audioEncoding":"WAV"}`) and the `audio` part. Auth with `Authorization: Bearer ${MODEL_API_KEY}`.
 - On `429`, retry with exponential backoff. On `500`, retry once.
+- Daily call budget: 500 calls per UTC day, counted per process. Calls over budget return 429 without calling Meta.
 - Response: `{ "text": "..." }`, taken from the response's `transcript` field.
 
 ---
 
 ## 9. Voice input (client hook)
 
-Expose the hook as `{ recording, transcribing, error, toggle }`.
+Expose the hook as `{ recording, transcribing, error, toggle }`. It also exposes getMeterLevels() for the live meter.
 
 - Capture microphone audio with `getUserMedia`.
 - Convert to 16 kHz mono WAV. (The original used `ScriptProcessor`; `AudioWorklet` is the modern equivalent.)
 - POST the WAV to the `transcribe` endpoint.
 - Place the returned text into the quote box.
+- Interim transcription is capped at 10 calls per recording. Final transcription on stop is not capped by this rule.
 
 **UI:**
 
@@ -347,6 +349,7 @@ Expose the hook as `{ recording, transcribing, error, toggle }`.
 - Status text:
   - "Listening… tap the square when you're done."
   - "Writing down what you said…"
+- The creator page search box also has the microphone button. It fills the creator search box, not the quote box.
 
 ---
 

@@ -25,7 +25,7 @@ Quotefinder is a web app. A user types or speaks a line they remember from a vid
 
 Quotefinder also has a creator archive (section 13A). A creator with a YouTube channel signs in with Google, connects their own channel, and searches the captions of their own uploads. Caption text is only ever shown to that creator.
 
-If nothing matches confidently, the app still returns at least 10 real, verified candidate links. It never ends in a dead end.
+When a YouTube search can run, the app returns at least 10 verified candidate links, or says plainly that it could not verify enough. When the search quota is spent and no candidate can be verified, the app says so plainly and shows no links. It never shows unverified links as results, and it never guesses a URL.
 
 ---
 
@@ -243,7 +243,7 @@ Stream the ranking and fallback calls to `TEXT_MODEL` through the Meta Model API
 - A `sceneLine` gives the scene description as a disambiguator.
 - A `whenLine` gives the human-readable window and tells the model to return nothing older. Use these labels: "the last 24 hours", "7 days", "30 days", "2 months", "6 months", "the last year".
 - Provide the real fetched catalogue: shortlist titles, descriptions, and URLs. The model must choose only from real URLs.
-- **Always list 10 plausible candidate videos with real, watchable URLs when unsure.**
+- **Ask for 10 plausible candidate videos with real, watchable URLs when unsure.** The app returns at least 10 verified candidate links when a YouTube search can run, or says plainly that it could not verify enough. When the search quota is spent and no candidate can be verified, the app says so plainly and shows no links. It never shows unverified links as results, and it never guesses a URL.
 - Say that the AI's answer is an estimate from memory, not a verified match.
 - Reply with a single JSON object with these fields:
   `found`, `confidence`, `videoUrl`, `videoTitle`, `publishedAt`, `startTime`, `endTime`, `fullSentence`, `context`, `notes`, `candidates[]`
@@ -252,7 +252,7 @@ Parse the reply by extracting the raw JSON and validating it with a schema valid
 
 ### 7.4 No confident hit: pad to 10
 
-Return exactly 10 candidates when unsure. Fill the list in this order:
+When a YouTube search can run, return exactly 10 candidates when unsure, or say plainly that enough could not be verified. When the search quota is spent and no candidate can be verified, say so plainly and show no links. Fill the list in this order:
 
 1. Videos from the metadata hits.
 2. Shortlist pool entries, with a "Possible match · <date>" reason line.
@@ -450,7 +450,7 @@ In the browser, confirm:
 - **Instagram, TikTok, and Facebook are not supported** in this version.
 - Matching is loose on wording and strict on substance (the `keyCoverage` guard).
 - Time windows filter the YouTube engine and the AI prompt, and appear in every turn's header.
-- The app must always return at least 10 verified candidates when it is not confident.
+- When a YouTube search can run, the app returns at least 10 verified candidate links when it is not confident, or says plainly that it could not verify enough. When the search quota is spent and no candidate can be verified, it says so plainly and shows no links. It never shows unverified links as results, and it never guesses a URL.
 - Credentials are entered only through the platform's secret store, never in chat or source code.
 
 ---
@@ -479,7 +479,7 @@ In the browser, confirm:
 
 **Result display.** Matched caption text is shown only to the signed-in creator, on the /creator page. The search page does not include the archive.
 
-**Budget and failures.** Keep the daily YouTube quota budget. A failed sign-in, token refresh, or caption call returns a clear message, never an unhandled throw (section 1, "never a dead end").
+**Budget and failures.** Keep the daily YouTube quota budget. A failed sign-in, token refresh, or caption call returns a clear message, never an unhandled throw (section 1).
 
 ### 13A.4 Retention
 

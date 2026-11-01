@@ -3,6 +3,8 @@
 // they are; this only prints one line per failure. It never logs headers,
 // request bodies, keys, or URL query strings.
 
+import { captureAlert } from "./alerts";
+
 export type LogContextValue = string | number | boolean | undefined;
 
 /** Context keys that name secrets, matched case-insensitively. */
@@ -14,8 +16,24 @@ const QUERY_PARAM = /[?&][^=\s&]+=[^&\s]*/g;
 
 const REDACTED = "[redacted]";
 
-function scrubText(text: string): string {
+/** Redact query strings and token-looking runs in free text. Shared
+ * with the Sentry scrubber (alerts.ts) so both use the same rules. */
+export function scrubText(text: string): string {
   return text.replace(QUERY_PARAM, REDACTED).replace(TOKEN_VALUE, REDACTED);
+}
+
+/** Redact one context value by its key name and shape. Shared with alerts.ts. */
+export function scrubValue(
+  key: string,
+  value: LogContextValue,
+): LogContextValue {
+  if (typeof value !== "string") {
+    return value;
+  }
+  if (SECRET_KEY.test(key) || TOKEN_VALUE.test(value)) {
+    return REDACTED;
+  }
+  return scrubText(value);
 }
 
 function scrubContext(
@@ -23,13 +41,7 @@ function scrubContext(
 ): Record<string, LogContextValue> {
   const clean: Record<string, LogContextValue> = {};
   for (const [key, value] of Object.entries(context)) {
-    if (typeof value !== "string") {
-      clean[key] = value;
-    } else if (SECRET_KEY.test(key) || TOKEN_VALUE.test(value)) {
-      clean[key] = REDACTED;
-    } else {
-      clean[key] = scrubText(value);
-    }
+    clean[key] = scrubValue(key, value);
   }
   return clean;
 }
@@ -46,4 +58,5 @@ export function logError(
   } else {
     console.error(`${line} ${JSON.stringify(scrubContext(context))}`);
   }
+  captureAlert(step, error, context);
 }

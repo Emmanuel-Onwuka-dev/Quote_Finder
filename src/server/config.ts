@@ -17,6 +17,7 @@ export interface ServerConfig {
   archiveTokenKey: string;
   archiveDbPath: string;
   searchBudgetUnits: number;
+  sentryDsn: string;
 }
 
 function parsePositiveInt(value: string | undefined, fallback: number): number {
@@ -47,6 +48,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       env.SEARCH_BUDGET_UNITS,
       SEARCH_BUDGET_UNITS,
     ),
+    sentryDsn: env.SENTRY_DSN ?? "",
   };
 }
 

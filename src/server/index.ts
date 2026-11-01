@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { existsSync } from "node:fs";
+import { captureAlert, initAlerts } from "./alerts";
 import { createArchiveRoutes } from "./archive/routes";
 import { openArchiveStore } from "./archive/store";
 import { loadConfig } from "./config";
@@ -11,9 +12,16 @@ import { createTranscribeHandler } from "./transcribe";
 
 const app = new Hono();
 
+const archiveConfig = loadConfig();
+initAlerts(archiveConfig.sentryDsn);
+
+app.onError((err, c) => {
+  captureAlert("unhandled route error", err);
+  return c.json({ message: "Something went wrong. Try again." }, 500);
+});
+
 app.get("/api/health", (c) => c.json({ ok: true, service: "quotefinder" }));
 
-const archiveConfig = loadConfig();
 // One store handle shared by the archive routes and the main-search quota,
 // so all budgets live in the same database.
 const archiveStore = openArchiveStore(archiveConfig.archiveDbPath, {

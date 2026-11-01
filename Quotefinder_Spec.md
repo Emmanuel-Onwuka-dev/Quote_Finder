@@ -59,6 +59,7 @@ Set these as server-side environment variables. Browser code must never read the
 | `MODEL_API_KEY` | Meta Model API key (create it in the Model API dashboard). Used for Muse Spark and Muse Voice Transcribe. |
 | `META_BASE_URL` | `https://api.meta.ai/v1` (OpenAI SDK compatible). Pass the key to the SDK explicitly; the OpenAI SDK does not read `MODEL_API_KEY` on its own. |
 | `YOUTUBE_API_KEY` | YouTube Data API v3 key. Used for channel resolution, uploads, and search. |
+| `SEARCH_BUDGET_UNITS` | Optional. Daily cap on main-search YouTube quota units. Default 3000. Raise it for heavy testing. Resets at UTC midnight. |
 
 Also configure these model names. Keep them in config rather than in code so you can swap versions:
 
@@ -282,7 +283,7 @@ Map `sinceDays` to a `publishedAfter` ISO date. Accepted values: `0` (any time),
 These extend the core flow. They are optional, but they show more of the Meta stack. Build them only after the core path works.
 
 - **Muse Glimmer query rephrasing (open weights).** This adds to the Muse Spark variants in section 7.3, step 1. Ask a locally served Muse Glimmer model (`OPEN_MODEL_URL`) for 3 to 5 more wordings of the remembered line, and add them to the search queries in section 5.4. Glimmer is Apache 2.0 and runs on your own hardware with vLLM, SGLang, llama.cpp, or ExecuTorch. If `OPEN_MODEL_URL` is unset, only the Muse Spark variants are used. Glimmer is off unless OPEN_MODEL_URL points to a server you can reach. It runs on your own machine, so the hosted version leaves OPEN_MODEL_URL empty and uses Muse Spark variants only. Set OPEN_MODEL_NAME if your server uses a model name other than glimmer.
-- **Muse Image quote card.** For each found result, call `POST ${META_BASE_URL}/images/generations` with model `IMAGE_MODEL` to create a shareable card with the full sentence. Show it in the result card. If the call fails, hide the card. The result must still work without it.
+- **Muse Image quote card.** For each found result, call `POST ${META_BASE_URL}/images/generations` with model `IMAGE_MODEL` to create a shareable card with the full sentence. Show it in the result card. If the call fails, hide the card. The result must still work without it. Daily cap: 500 calls per UTC day, counted per process. Calls over the cap return 429 without calling Meta. The card is labelled AI-generated in the UI, because the image model may alter the text.
 - **Muse Code.** The project is built with Muse Code, Meta's coding agent. This is a build tool, not a runtime dependency. Name it in the README.
 
 ---

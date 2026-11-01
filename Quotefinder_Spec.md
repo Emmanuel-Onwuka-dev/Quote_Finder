@@ -479,7 +479,7 @@ In the browser, confirm:
 
 ### 13A.4 Retention
 
-Caption cue text is purged after 30 days. The creator can also purge it at any time from the /creator page.
+Caption cue text is purged after 30 days.
 
 **Out of scope for the archive.**
 - Viewers searching anyone else's captions.

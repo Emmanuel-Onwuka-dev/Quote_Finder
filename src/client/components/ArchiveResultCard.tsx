@@ -6,6 +6,7 @@ import {
   youtubeEmbedUrl,
 } from "../lib/format";
 import { openExternal } from "../lib/openExternal";
+import { archiveShareText } from "../lib/share";
 
 /** One creator-archive match, as returned by POST /api/archive/search. */
 export interface CreatorArchiveMatch {
@@ -31,6 +32,7 @@ export function ArchiveResultCard({
   timeWindow,
 }: ArchiveResultCardProps) {
   const [copied, setCopied] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
   const videoId = videoIdFromUrl(result.videoUrl);
   const published = formatDate(result.publishedAt);
 
@@ -40,12 +42,50 @@ export function ArchiveResultCard({
     return () => window.clearTimeout(timer);
   }, [copied]);
 
+  useEffect(() => {
+    if (!shareCopied) return;
+    const timer = window.setTimeout(() => setShareCopied(false), 2000);
+    return () => window.clearTimeout(timer);
+  }, [shareCopied]);
+
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(result.videoUrl);
       setCopied(true);
     } catch {
       // Clipboard unavailable; leave the button unchanged.
+    }
+  };
+
+  const copyShareText = async () => {
+    try {
+      await navigator.clipboard.writeText(
+        archiveShareText(result.videoTitle, result.videoUrl),
+      );
+      setShareCopied(true);
+    } catch {
+      // Clipboard unavailable; leave the button unchanged.
+    }
+  };
+
+  // Video link only: title and URL. The matched caption text,
+  // timestamps, and cue text are never passed here.
+  const shareLink = async () => {
+    if (typeof navigator.share !== "function") {
+      await copyShareText();
+      return;
+    }
+    try {
+      await navigator.share({
+        title: "Quotefinder",
+        text: archiveShareText(result.videoTitle, result.videoUrl),
+        url: result.videoUrl,
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+      await copyShareText();
     }
   };
 
@@ -102,6 +142,13 @@ export function ArchiveResultCard({
           className="rounded-lg border border-border px-4 py-2 font-medium text-foreground"
         >
           {copied ? "Copied" : "Copy link"}
+        </button>
+        <button
+          type="button"
+          onClick={() => void shareLink()}
+          className="rounded-lg border border-border px-4 py-2 font-medium text-foreground"
+        >
+          {shareCopied ? "Copied" : "Share link"}
         </button>
         {videoId && (
           <button

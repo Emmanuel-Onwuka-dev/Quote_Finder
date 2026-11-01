@@ -9,6 +9,17 @@ export function shareText(sentence: string, videoUrl: string): string {
   return `Remembered line: “${trimmed}” (not verified)\n${videoUrl}`;
 }
 
+/** Text for sharing a creator-archive match: the video title, then
+ * the video URL on its own line. Takes only title and URL, so matched
+ * caption text, timestamps, and cue text can never leak into a share. */
+export function archiveShareText(videoTitle: string, videoUrl: string): string {
+  const trimmed = videoTitle.trim();
+  if (!trimmed) {
+    return videoUrl;
+  }
+  return `${trimmed}\n${videoUrl}`;
+}
+
 /** Minimal result shape the card-action rules need. */
 export interface CardActionInput {
   found: boolean;

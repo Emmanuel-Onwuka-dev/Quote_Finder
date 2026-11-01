@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cardActions, shareText } from "./share";
+import { archiveShareText, cardActions, shareText } from "./share";
 
 describe("shareText", () => {
   it("labels the sentence as a remembered, unverified line above the URL", () => {
@@ -27,6 +27,31 @@ describe("shareText", () => {
     expect(shareText("some line", "https://www.youtube.com/watch?v=vid1")).toContain(
       "(not verified)",
     );
+  });
+});
+
+describe("archiveShareText", () => {
+  it("puts the video title above the URL", () => {
+    expect(
+      archiveShareText("My quantum bicycle build", "https://www.youtube.com/watch?v=vid1"),
+    ).toBe("My quantum bicycle build\nhttps://www.youtube.com/watch?v=vid1");
+  });
+
+  it("returns only the URL when the title is empty", () => {
+    expect(archiveShareText("", "https://www.youtube.com/watch?v=vid1")).toBe(
+      "https://www.youtube.com/watch?v=vid1",
+    );
+    expect(archiveShareText("   ", "https://www.youtube.com/watch?v=vid1")).toBe(
+      "https://www.youtube.com/watch?v=vid1",
+    );
+  });
+
+  it("contains nothing beyond the title and URL", () => {
+    const title = "Cooking pasta for dinner";
+    const url = "https://www.youtube.com/watch?v=vid2";
+    const output = archiveShareText(title, url);
+    expect(output).toBe(`${title}\n${url}`);
+    expect(output).not.toContain("caption");
   });
 });
 

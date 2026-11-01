@@ -26,7 +26,7 @@ const RETRY_429_DELAYS_MS = [500, 1000, 2000];
 /** §8.2 retry rule: on 500, retry once. */
 const RETRY_500_ATTEMPTS = 2;
 /** §8.2 daily call budget: at most this many paid Meta calls per UTC day. */
-export const TRANSCRIBE_DAILY_CALL_LIMIT = 500;
+export const TRANSCRIBE_DAILY_CALL_LIMIT = 2000;
 
 export interface WavInfo {
   sampleRate: number;

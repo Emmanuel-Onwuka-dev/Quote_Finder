@@ -324,7 +324,7 @@ These extend the core flow. They are optional, but they show more of the Meta st
 - Reject files smaller than 2 KB, larger than 32 MB, or longer than 10 minutes.
 - Forward to `POST ${META_BASE_URL}/asr/transcribe` as a multipart form with a `request` JSON part (`{"mode":"PUSH_TO_TALK","model":"muse-voice-transcribe-1.0","audioEncoding":"WAV"}`) and the `audio` part. Auth with `Authorization: Bearer ${MODEL_API_KEY}`.
 - On `429`, retry with exponential backoff. On `500`, retry once.
-- Daily call budget: 500 calls per UTC day, counted per process. Calls over budget return 429 without calling Meta.
+- Daily call budget: 2000 calls per UTC day, counted per process. Calls over budget return 429 without calling Meta.
 - Response: `{ "text": "..." }`, taken from the response's `transcript` field.
 
 ---

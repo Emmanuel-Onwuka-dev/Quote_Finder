@@ -279,21 +279,21 @@ describe("POST /api/transcribe", () => {
 });
 
 describe("daily call budget", () => {
-  it("refuses the 501st call of the day without calling Meta", async () => {
+  it("refuses the 2001st call of the day without calling Meta", async () => {
     const { app, seen } = setup([
       { status: 200, body: { transcript: "hi" } },
     ]);
     const wav = makeWavFile();
-    for (let i = 0; i < 500; i += 1) {
+    for (let i = 0; i < 2000; i += 1) {
       expect((await postAudio(app, wav)).status).toBe(200);
     }
-    expect(seen).toHaveLength(500);
+    expect(seen).toHaveLength(2000);
     const refused = await postAudio(app, wav);
     expect(refused.status).toBe(429);
     expect(await refused.json()).toEqual({
       message: "Voice input is busy today, type the line instead.",
     });
-    expect(seen).toHaveLength(500);
+    expect(seen).toHaveLength(2000);
   }, 60000);
 
   it("resets the budget on the next UTC day", async () => {
@@ -303,7 +303,7 @@ describe("daily call budget", () => {
       { now: () => now },
     );
     const wav = makeWavFile();
-    for (let i = 0; i < 500; i += 1) {
+    for (let i = 0; i < 2000; i += 1) {
       expect((await postAudio(app, wav)).status).toBe(200);
     }
     expect((await postAudio(app, wav)).status).toBe(429);
@@ -311,7 +311,7 @@ describe("daily call budget", () => {
     const res = await postAudio(app, wav);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ text: "hi" });
-    expect(seen).toHaveLength(501);
+    expect(seen).toHaveLength(2001);
   }, 60000);
 
   it("counts retries toward the budget", async () => {
@@ -322,13 +322,13 @@ describe("daily call budget", () => {
     const wav = makeWavFile();
     expect((await postAudio(app, wav)).status).toBe(200);
     expect(seen).toHaveLength(2);
-    for (let i = 0; i < 498; i += 1) {
+    for (let i = 0; i < 1998; i += 1) {
       expect((await postAudio(app, wav)).status).toBe(200);
     }
-    expect(seen).toHaveLength(500);
+    expect(seen).toHaveLength(2000);
     const refused = await postAudio(app, wav);
     expect(refused.status).toBe(429);
-    expect(seen).toHaveLength(500);
+    expect(seen).toHaveLength(2000);
   }, 60000);
 });
 

@@ -61,6 +61,10 @@ this version does not depend on that answer.
 - A5 (removed): viewer archive UI — creator picker on the search page,
   archive result card there, and miss/retry states. Removed when the archive
   went creator-only; caption text is shown only to the signed-in creator.
+- P4: voice input — `POST /api/transcribe` (WAV validation, Meta ASR
+  forward with 429/500 retries), `use-voice-input` hook (AudioWorklet
+  capture, 16 kHz mono WAV), mic button with recording/transcribing
+  states, and endpoint plus audio unit tests.
 
 ## External services and libraries
 

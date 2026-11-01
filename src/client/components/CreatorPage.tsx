@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProgressUpdate } from "../hooks/useQuoteStream";
+import { useVoiceInput } from "../hooks/use-voice-input";
 import { formatDate } from "../lib/format";
 import { createSseParser } from "../lib/sse";
 import {
@@ -8,6 +9,7 @@ import {
 } from "./ArchiveResultCard";
 import { LogoMark } from "./Brand";
 import { Progress } from "./Progress";
+import { VoiceButton, VoiceMeter, VoiceStatus } from "./VoiceButton";
 
 interface ArchiveCreator {
   channelId: string;
@@ -219,6 +221,9 @@ function CreatorSearch({
   const [matches, setMatches] = useState<CreatorArchiveMatch[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const voice = useVoiceInput({
+    onText: (text) => setQuery(text),
+  });
 
   const runSearch = async () => {
     const trimmed = query.trim();
@@ -273,10 +278,16 @@ function CreatorSearch({
           type="text"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder={`A line from ${channelTitle || "your channel"}`}
+          placeholder={`A line from ${channelTitle || "your channel"} — or say it out loud`}
           disabled={searching}
           className="w-full rounded-lg border border-border bg-background px-3 py-2 text-foreground placeholder:text-muted disabled:opacity-60"
         />
+        <VoiceButton
+          disabled={searching}
+          voice={voice}
+          dictateLabel="Dictate the line"
+        />
+        {voice.recording && <VoiceMeter voice={voice} />}
         <button
           type="submit"
           disabled={searching || query.trim() === ""}
@@ -285,6 +296,7 @@ function CreatorSearch({
           {searching ? "Searching…" : "Search"}
         </button>
       </form>
+      <VoiceStatus voice={voice} />
       {searchError && (
         <p role="alert" className="mt-2 text-destructive">
           {searchError}

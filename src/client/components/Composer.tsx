@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { TIME_WINDOW_OPTIONS } from "../lib/format";
+import { useVoiceInput } from "../hooks/use-voice-input";
+import { VoiceButton, VoiceMeter, VoiceStatus } from "./VoiceButton";
 
 export interface SearchInput {
   quote: string;
@@ -40,6 +42,9 @@ export function Composer({
   const [customDays, setCustomDays] = useState("30");
   const customInputRef = useRef<HTMLInputElement>(null);
   const lastResetKey = useRef(resetKey);
+  const voice = useVoiceInput({
+    onText: (text) => setQuote(text),
+  });
 
   // Clear quote/scene/window when the parent confirms a search started.
   // The creator is kept, per spec.
@@ -94,7 +99,7 @@ export function Composer({
             type="text"
             value={quote}
             onChange={(e) => setQuote(e.target.value)}
-            placeholder="The line you remember"
+            placeholder="The line you remember — or say it out loud"
             required
             disabled={disabled}
             className={`${inputClass} flex-1`}
@@ -105,7 +110,10 @@ export function Composer({
           >
             &rdquo;
           </span>
+          <VoiceButton disabled={disabled} voice={voice} />
+          {voice.recording && <VoiceMeter voice={voice} />}
         </div>
+        <VoiceStatus voice={voice} />
       </div>
 
       <div className="mt-3">

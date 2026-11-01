@@ -6,6 +6,7 @@ import { createArchiveRoutes } from "./archive/routes";
 import { openArchiveStore } from "./archive/store";
 import { loadConfig } from "./config";
 import { createQuoteStreamHandler } from "./quote-stream";
+import { createTranscribeHandler } from "./transcribe";
 
 const app = new Hono();
 
@@ -17,6 +18,15 @@ const archiveConfig = loadConfig();
 const archiveStore = openArchiveStore(archiveConfig.archiveDbPath);
 
 app.post("/api/quote-stream", createQuoteStreamHandler({ archiveStore }));
+
+app.post(
+  "/api/transcribe",
+  createTranscribeHandler({
+    modelApiKey: archiveConfig.modelApiKey,
+    metaBaseUrl: archiveConfig.metaBaseUrl,
+    transcriptionModel: archiveConfig.transcriptionModel,
+  }),
+);
 
 app.route(
   "/api/archive",

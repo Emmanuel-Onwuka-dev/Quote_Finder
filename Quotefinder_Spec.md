@@ -223,7 +223,7 @@ A found result contains:
 - `fullSentence` (the remembered line as the user typed it, cleaned up), `context`, `confidence`
 - `notes`: plain-language description of what was searched, for example:
   - "matched the title and description of N videos out of M uploads"
-  - "no transcript was read, so the exact moment the line is said is not verified"
+  - "We did not read the video's captions, so the exact moment the line is said is not verified"
 
 Every found result must say the timestamp is not verified.
 

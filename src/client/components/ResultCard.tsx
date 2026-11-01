@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { LocateResult } from "../hooks/useQuoteStream";
 import { formatDate, videoIdFromUrl, youtubeEmbedUrl } from "../lib/format";
+import { shareText } from "../lib/share";
 
 interface ResultCardProps {
   result: LocateResult;
@@ -8,8 +9,15 @@ interface ResultCardProps {
 }
 
 /** Shareable quote card (§7.7): fetched lazily after the result
- * renders, hidden entirely when the call fails. */
-function QuoteCard({ sentence }: { sentence: string }) {
+ * renders, hidden entirely when the call fails. Reports the loaded URL
+ * (or null) so the parent can offer download and image sharing. */
+function QuoteCard({
+  sentence,
+  onImage,
+}: {
+  sentence: string;
+  onImage: (url: string | null) => void;
+}) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -17,6 +25,7 @@ function QuoteCard({ sentence }: { sentence: string }) {
     let cancelled = false;
     setLoading(true);
     setImageUrl(null);
+    onImage(null);
     fetch("/api/quote-card", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -36,6 +45,7 @@ function QuoteCard({ sentence }: { sentence: string }) {
         if (!cancelled) {
           setImageUrl(url);
           setLoading(false);
+          onImage(url);
         }
       })
       .catch(() => {
@@ -74,9 +84,14 @@ function QuoteCard({ sentence }: { sentence: string }) {
   );
 }
 
+const actionButton =
+  "rounded-lg border border-border px-4 py-2 font-medium text-foreground";
+
 export function ResultCard({ result, timeWindow }: ResultCardProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [copied, setCopied] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+  const [cardImage, setCardImage] = useState<string | null>(null);
   const videoId = videoIdFromUrl(result.videoUrl);
   const published = formatDate(result.publishedAt);
 
@@ -90,12 +105,91 @@ export function ResultCard({ result, timeWindow }: ResultCardProps) {
     return () => window.clearTimeout(timer);
   }, [copied]);
 
+  useEffect(() => {
+    if (!shareCopied) return;
+    const timer = window.setTimeout(() => setShareCopied(false), 2000);
+    return () => window.clearTimeout(timer);
+  }, [shareCopied]);
+
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(result.videoUrl);
       setCopied(true);
     } catch {
       // Clipboard unavailable; leave the button unchanged.
+    }
+  };
+
+  const downloadCard = async () => {
+    if (!cardImage) {
+      return;
+    }
+    // A data: URL downloads directly; a remote URL goes through a blob
+    // so the download attribute is honored.
+    try {
+      const href = cardImage.startsWith("data:")
+        ? cardImage
+        : URL.createObjectURL(await (await fetch(cardImage)).blob());
+      const anchor = document.createElement("a");
+      anchor.href = href;
+      anchor.download = "quotefinder-card.png";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      if (!cardImage.startsWith("data:")) {
+        URL.revokeObjectURL(href);
+      }
+    } catch {
+      // Cross-origin or otherwise unfetchable: open it instead, quietly.
+      window.open(cardImage, "_blank", "noopener");
+    }
+  };
+
+  const copyShareText = async () => {
+    try {
+      await navigator.clipboard.writeText(
+        shareText(result.fullSentence, result.videoUrl),
+      );
+      setShareCopied(true);
+    } catch {
+      // Clipboard unavailable; leave the button unchanged.
+    }
+  };
+
+  const shareResult = async () => {
+    const text = shareText(result.fullSentence, result.videoUrl);
+    if (typeof navigator.share !== "function") {
+      await copyShareText();
+      return;
+    }
+    try {
+      let files: File[] | undefined;
+      if (cardImage) {
+        try {
+          const blob = await (await fetch(cardImage)).blob();
+          const file = new File([blob], "quotefinder-card.png", {
+            type: blob.type || "image/png",
+          });
+          if (
+            typeof navigator.canShare === "function" &&
+            navigator.canShare({ files: [file] })
+          ) {
+            files = [file];
+          }
+        } catch {
+          // Image unavailable for sharing; share text and URL only.
+        }
+      }
+      await navigator.share(
+        files
+          ? { title: "Quotefinder", text, url: result.videoUrl, files }
+          : { title: "Quotefinder", text, url: result.videoUrl },
+      );
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+      await copyShareText();
     }
   };
 
@@ -148,14 +242,36 @@ export function ResultCard({ result, timeWindow }: ResultCardProps) {
           </p>
         </div>
       )}
-      <button
-        type="button"
-        onClick={() => void copyLink()}
-        className="mt-4 rounded-lg border border-border px-4 py-2 font-medium text-foreground"
-      >
-        {copied ? "Copied" : "Copy link"}
-      </button>
-      {result.fullSentence && <QuoteCard sentence={result.fullSentence} />}
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => void copyLink()}
+          className={actionButton}
+        >
+          {copied ? "Copied" : "Copy link"}
+        </button>
+        {result.found && (
+          <button
+            type="button"
+            onClick={() => void shareResult()}
+            className={actionButton}
+          >
+            {shareCopied ? "Copied" : "Share"}
+          </button>
+        )}
+        {result.found && cardImage && (
+          <button
+            type="button"
+            onClick={() => void downloadCard()}
+            className={actionButton}
+          >
+            Download card
+          </button>
+        )}
+      </div>
+      {result.fullSentence && (
+        <QuoteCard sentence={result.fullSentence} onImage={setCardImage} />
+      )}
     </div>
   );
 }

@@ -29,7 +29,11 @@ const GlimmerChatSchema = z.object({
     .min(1),
 });
 
-const GlimmerVariantsSchema = z.array(z.string());
+// Null items become "" and are dropped by the empty-filter below,
+// so one null wording no longer discards every variant.
+const GlimmerVariantsSchema = z.array(
+  z.string().nullish().transform((value) => value ?? ""),
+);
 
 const GLIMMER_SYSTEM = [
   "You help find a video from a half-remembered quote.",

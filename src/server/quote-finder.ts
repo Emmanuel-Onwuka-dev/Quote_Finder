@@ -172,7 +172,12 @@ function extractJson(text: string, open: "{" | "["): unknown {
 
 // --- Step 1: query variants (§7.3.1). Never fatal: [] on any failure. ---
 
-const VariantsSchema = z.array(z.string());
+// Model replies use null where the prompt implies "unknown". Treat null
+// exactly like a missing field, keeping today's defaults.
+const nullString = z.string().nullish().transform((value) => value ?? "");
+const nullNumber = z.number().nullish().transform((value) => value ?? 0);
+
+const VariantsSchema = z.array(nullString);
 
 const VARIANTS_SYSTEM = [
   "You help find a video from a half-remembered quote.",
@@ -243,7 +248,10 @@ function contextBlock(context: PromptContext): string {
 // --- Step 2: ranking (§7.3.2). Shortlist-only; [] on any failure. ---
 
 const RankingSchema = z.object({
-  picks: z.array(z.object({ url: z.string(), reason: z.string() })),
+  picks: z
+    .array(z.object({ url: nullString, reason: nullString }))
+    .nullish()
+    .transform((value) => value ?? []),
 });
 
 export interface RankPick {
@@ -287,23 +295,34 @@ export async function rankShortlist(
 // --- Step 3: fallback (§7.3.3). Throws on failure — caller degrades. ---
 
 const FallbackCandidateSchema = z.object({
-  url: z.string().optional().default(""),
-  title: z.string().optional().default(""),
-  reason: z.string().optional().default(""),
+  url: nullString,
+  title: nullString,
+  reason: nullString,
 });
 
 const FallbackSchema = z.object({
-  found: z.boolean(),
-  confidence: z.enum(["high", "medium", "low"]).optional().default("low"),
-  videoUrl: z.string().optional().default(""),
-  videoTitle: z.string().optional().default(""),
-  publishedAt: z.string().optional().default(""),
-  startTime: z.number().optional().default(0),
-  endTime: z.number().optional().default(0),
-  fullSentence: z.string().optional().default(""),
-  context: z.string().optional().default(""),
-  notes: z.string().optional().default(""),
-  candidates: z.array(FallbackCandidateSchema).optional().default([]),
+  found: z.boolean().nullish().transform((value) => value ?? false),
+  // Null or anything outside the enum collapses to "low": preprocess,
+  // because a post-parse transform never runs when parsing itself fails.
+  confidence: z.preprocess(
+    (value) =>
+      value === "high" || value === "medium" || value === "low"
+        ? value
+        : "low",
+    z.enum(["high", "medium", "low"]),
+  ),
+  videoUrl: nullString,
+  videoTitle: nullString,
+  publishedAt: nullString,
+  startTime: nullNumber,
+  endTime: nullNumber,
+  fullSentence: nullString,
+  context: nullString,
+  notes: nullString,
+  candidates: z
+    .array(FallbackCandidateSchema)
+    .nullish()
+    .transform((value) => value ?? []),
 });
 
 export type FallbackAnswer = z.infer<typeof FallbackSchema>;

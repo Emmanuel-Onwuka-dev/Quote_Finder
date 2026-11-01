@@ -84,6 +84,19 @@ describe("glimmerVariants", () => {
     ).resolves.toEqual(["b", "a", "c", "d", "e"]);
   });
 
+  it("drops null wordings and keeps the rest", async () => {
+    const fetchFn = (async (): Promise<Response> =>
+      chatResponse(
+        JSON.stringify(["reworded quote", null, "another take"]),
+      )) as unknown as typeof fetch;
+    await expect(
+      glimmerVariants("quote", {
+        openModelUrl: "http://glimmer.test/v1",
+        fetchFn,
+      }),
+    ).resolves.toEqual(["reworded quote", "another take"]);
+  });
+
   it("returns [] on error status, bad shape, or no JSON array", async () => {
     const failing = [
       { ok: false, status: 500, json: async () => ({}) },

@@ -278,6 +278,18 @@ describe("queryVariants", () => {
       [],
     );
   });
+
+  it("drops null items and keeps the rest", async () => {
+    setup([
+      {
+        status: 200,
+        body: chatBody(JSON.stringify(["quantum bike", null, "my cycle"])),
+      },
+    ]);
+    await expect(
+      queryVariants("quantum bicycle", TEST_LLM, fetch),
+    ).resolves.toEqual(["quantum bike", "my cycle"]);
+  });
 });
 
 describe("rankShortlist", () => {
@@ -288,6 +300,22 @@ describe("rankShortlist", () => {
     ).resolves.toEqual([
       { url: youtubeWatchUrl("vid1"), reason: "Title names the build" },
     ]);
+  });
+
+  it("keeps picks with a null reason", async () => {
+    setup([
+      {
+        status: 200,
+        body: chatBody(
+          JSON.stringify({
+            picks: [{ url: youtubeWatchUrl("vid1"), reason: null }],
+          }),
+        ),
+      },
+    ]);
+    await expect(
+      rankShortlist(contextWith(["My quantum bicycle build"]), TEST_LLM, fetch),
+    ).resolves.toEqual([{ url: youtubeWatchUrl("vid1"), reason: "" }]);
   });
 });
 
@@ -309,6 +337,63 @@ describe("fallbackAnswer", () => {
     expect(answer.candidates).toEqual([
       { url: "", title: "No link here", reason: "" },
     ]);
+  });
+});
+
+describe("fallbackAnswer null handling", () => {
+  it("treats null date, time, and text fields like missing fields", async () => {
+    setup([
+      {
+        status: 200,
+        body: chatBody(
+          fallbackReply({
+            found: true,
+            publishedAt: null,
+            startTime: null,
+            endTime: null,
+            videoTitle: null,
+            notes: null,
+          }),
+        ),
+      },
+    ]);
+    const answer = await fallbackAnswer(contextWith([]), TEST_LLM, fetch);
+    expect(answer.found).toBe(true);
+    expect(answer.publishedAt).toBe("");
+    expect(answer.startTime).toBe(0);
+    expect(answer.endTime).toBe(0);
+    expect(answer.videoTitle).toBe("");
+    expect(answer.notes).toBe("");
+  });
+
+  it("treats a null or unknown confidence as low", async () => {
+    setup([
+      { status: 200, body: chatBody(fallbackReply({ confidence: "none" })) },
+    ]);
+    await expect(
+      fallbackAnswer(contextWith([]), TEST_LLM, fetch),
+    ).resolves.toMatchObject({ confidence: "low" });
+    setup([
+      { status: 200, body: chatBody(fallbackReply({ confidence: null })) },
+    ]);
+    await expect(
+      fallbackAnswer(contextWith([]), TEST_LLM, fetch),
+    ).resolves.toMatchObject({ confidence: "low" });
+  });
+
+  it("treats a null or missing found as false", async () => {
+    setup([
+      { status: 200, body: chatBody(fallbackReply({ found: null })) },
+    ]);
+    await expect(
+      fallbackAnswer(contextWith([]), TEST_LLM, fetch),
+    ).resolves.toMatchObject({ found: false });
+    const rest = JSON.parse(fallbackReply()) as Record<string, unknown>;
+    delete rest["found"];
+    setup([{ status: 200, body: chatBody(JSON.stringify(rest)) }]);
+    await expect(
+      fallbackAnswer(contextWith([]), TEST_LLM, fetch),
+    ).resolves.toMatchObject({ found: false });
   });
 });
 
@@ -574,6 +659,56 @@ describe("locateQuote", () => {
       result.notes.some((note) =>
         note.includes("trusted candidates were available"),
       ),
+    ).toBe(true);
+  });
+
+  it("answers from memory when the fallback reply has null fields", async () => {
+    setup([
+      { status: 200, body: chatBody(VARIANTS_REPLY) },
+      { status: 200, body: chatBody(RANK_VID1_REPLY) },
+      {
+        status: 200,
+        body: chatBody(
+          fallbackReply({
+            found: false,
+            confidence: "none",
+            videoUrl: youtubeWatchUrl("vid1"),
+            videoTitle: "My quantum bicycle build",
+            publishedAt: null,
+            startTime: null,
+            endTime: null,
+            candidates: [
+              {
+                url: youtubeWatchUrl("vid2"),
+                title: "Cooking pasta",
+                reason: null,
+              },
+            ],
+          }),
+        ),
+      },
+    ]);
+    const result = await locateQuote(
+      {
+        quote: "xylophone zephyr nebula",
+        creator: "@tester",
+        scene: "",
+        sinceDays: 0,
+      },
+      { llm: TEST_LLM, youtubeApiKey: "yt-key", fetchFn: fetch },
+    );
+    expect(result.found).toBe(false);
+    expect(result.candidates.length).toBeGreaterThan(0);
+    expect(
+      result.candidates.some(
+        (candidate) => candidate.url === youtubeWatchUrl("vid2"),
+      ),
+    ).toBe(true);
+    expect(
+      result.notes.some((note) => note.includes("fallback was unavailable")),
+    ).toBe(false);
+    expect(
+      result.notes.some((note) => note.includes("estimate from memory")),
     ).toBe(true);
   });
 

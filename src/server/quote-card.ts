@@ -31,8 +31,14 @@ const GenerationsSchema = z.object({
   data: z
     .array(
       z.object({
-        url: z.string().optional(),
-        b64_json: z.string().optional(),
+        url: z
+          .string()
+          .nullish()
+          .transform((value) => value ?? undefined),
+        b64_json: z
+          .string()
+          .nullish()
+          .transform((value) => value ?? undefined),
       }),
     )
     .min(1),

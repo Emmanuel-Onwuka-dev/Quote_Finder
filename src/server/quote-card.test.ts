@@ -96,6 +96,17 @@ describe("POST /api/quote-card", () => {
     });
   });
 
+  it("accepts a null url when b64_json is present", async () => {
+    const { app } = setup([
+      { status: 200, body: { data: [{ url: null, b64_json: "aGVsbG8=" }] } },
+    ]);
+    const res = await postCard(app, { sentence: "never give up" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      imageUrl: "data:image/png;base64,aGVsbG8=",
+    });
+  });
+
   it("rejects invalid bodies with a 400", async () => {
     const { app, seen } = setup();
     expect((await postCard(app, "not json{")).status).toBe(400);

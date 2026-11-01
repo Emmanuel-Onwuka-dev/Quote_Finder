@@ -28,7 +28,9 @@ this version does not depend on that answer.
   through the Meta Model API.
 - Speech (voice input): Muse Voice Transcribe (`muse-voice-transcribe-1.0`)
   through the Meta Model API.
-- Optional: Muse Image quote cards, Muse Glimmer query rephrasing.
+- Optional: Muse Image quote cards, Muse Glimmer query rephrasing
+  (off on the hosted version: it needs a local Glimmer server reachable
+  at OPEN_MODEL_URL).
 - Coding agent: built with **Muse Code**.
 
 ## Original work (built during the hackathon)
@@ -65,6 +67,10 @@ this version does not depend on that answer.
   forward with 429/500 retries), `use-voice-input` hook (AudioWorklet
   capture, 16 kHz mono WAV), mic button with recording/transcribing
   states, and endpoint plus audio unit tests.
+- P5: Glimmer variant integration — optional second-model rephrasings
+  from `OPEN_MODEL_URL` appended to the Spark variants, never fatal.
+  Off on the hosted version: it needs a local Glimmer server reachable
+  at OPEN_MODEL_URL.
 
 ## External services and libraries
 

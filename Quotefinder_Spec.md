@@ -230,7 +230,7 @@ Every found result must say the timestamp is not verified.
 
 Muse Spark does three jobs, all for YouTube only:
 
-1. **Query variants (before search).** Ask `TEXT_MODEL` for 3 to 5 alternative wordings of the quote, as a JSON array. Use them as extra search queries (section 5.4).
+1. **Query variants (before search).** Ask `TEXT_MODEL` for 3 to 5 alternative wordings of the quote, as a JSON array. Use them as extra search queries (section 5.4). When Glimmer is enabled, it takes one of the 3 search slots, after the first two Muse Spark wordings. The total number of searches does not change.
 2. **Ranking (after scoring, whenever the shortlist is non-empty).** Send the shortlist (titles, descriptions, URLs, dates), the quote, the scene, and the time window. Ask it to pick the best matches and give a one-line reason for each. Only shortlist URLs may be chosen.
 3. **Fallback (when nothing is confident).** Use the rules below to answer from memory. This runs only when no candidate reaches the found threshold (section 7.2), including when the index finds nothing and when `searchEverywhere` finds nothing. It never runs if a confident metadata match already exists.
 
@@ -281,7 +281,7 @@ Map `sinceDays` to a `publishedAfter` ISO date. Accepted values: `0` (any time),
 
 These extend the core flow. They are optional, but they show more of the Meta stack. Build them only after the core path works.
 
-- **Muse Glimmer query rephrasing (open weights).** This adds to the Muse Spark variants in section 7.3, step 1. Ask a locally served Muse Glimmer model (`OPEN_MODEL_URL`) for 3 to 5 more wordings of the remembered line, and add them to the search queries in section 5.4. Glimmer is Apache 2.0 and runs on your own hardware with vLLM, SGLang, llama.cpp, or ExecuTorch. If `OPEN_MODEL_URL` is unset, only the Muse Spark variants are used.
+- **Muse Glimmer query rephrasing (open weights).** This adds to the Muse Spark variants in section 7.3, step 1. Ask a locally served Muse Glimmer model (`OPEN_MODEL_URL`) for 3 to 5 more wordings of the remembered line, and add them to the search queries in section 5.4. Glimmer is Apache 2.0 and runs on your own hardware with vLLM, SGLang, llama.cpp, or ExecuTorch. If `OPEN_MODEL_URL` is unset, only the Muse Spark variants are used. Glimmer is off unless OPEN_MODEL_URL points to a server you can reach. It runs on your own machine, so the hosted version leaves OPEN_MODEL_URL empty and uses Muse Spark variants only. Set OPEN_MODEL_NAME if your server uses a model name other than glimmer.
 - **Muse Image quote card.** For each found result, call `POST ${META_BASE_URL}/images/generations` with model `IMAGE_MODEL` to create a shareable card with the full sentence. Show it in the result card. If the call fails, hide the card. The result must still work without it.
 - **Muse Code.** The project is built with Muse Code, Meta's coding agent. This is a build tool, not a runtime dependency. Name it in the README.
 

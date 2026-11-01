@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { LocateResult } from "../hooks/useQuoteStream";
 import { formatDate, videoIdFromUrl, youtubeEmbedUrl } from "../lib/format";
-import { shareText } from "../lib/share";
+import { cardActions, shareText } from "../lib/share";
 
 interface ResultCardProps {
   result: LocateResult;
@@ -94,6 +94,7 @@ export function ResultCard({ result, timeWindow }: ResultCardProps) {
   const [cardImage, setCardImage] = useState<string | null>(null);
   const videoId = videoIdFromUrl(result.videoUrl);
   const published = formatDate(result.publishedAt);
+  const actions = cardActions(result, cardImage !== null);
 
   useEffect(() => {
     headingRef.current?.focus();
@@ -250,7 +251,7 @@ export function ResultCard({ result, timeWindow }: ResultCardProps) {
         >
           {copied ? "Copied" : "Copy link"}
         </button>
-        {result.found && (
+        {actions.share && (
           <button
             type="button"
             onClick={() => void shareResult()}
@@ -259,7 +260,7 @@ export function ResultCard({ result, timeWindow }: ResultCardProps) {
             {shareCopied ? "Copied" : "Share"}
           </button>
         )}
-        {result.found && cardImage && (
+        {actions.download && (
           <button
             type="button"
             onClick={() => void downloadCard()}

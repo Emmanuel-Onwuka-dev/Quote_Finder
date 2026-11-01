@@ -5,6 +5,7 @@
 import { z } from "zod";
 import type { ArchiveStore } from "./archive/store";
 import { loadConfig, requireKey } from "./config";
+import { glimmerVariants } from "./glimmer";
 import { authHeaders, createLlmClient, type LlmClient } from "./llm-client";
 import {
   CHANNELS_LIST_COST,
@@ -115,6 +116,8 @@ export interface LocateDeps {
   youtubeApiKey?: string;
   onProgress?: ProgressFn;
   fetchFn?: typeof fetch;
+  /** §7.7 Glimmer endpoint override (tests). Live default: OPEN_MODEL_URL. */
+  openModelUrl?: string;
   /** Skip the YouTube engine and answer from memory (quota spent). */
   skipEngine?: boolean;
   /** Store + day for recording search quota spend. */
@@ -490,6 +493,27 @@ export async function locateQuote(
   // 1. Query variants (before search).
   onProgress("Asking the model", "alternative wordings");
   const variants = await queryVariants(quote, llm, fetchFn);
+  // §7.7: optional Glimmer rephrasings append to Spark's variants.
+  // Unset or failing endpoint means Spark-only, exactly as before.
+  // Glimmer takes the third search slot, after the first two Spark
+  // wordings; the engine still runs 3 variant queries, so quota is
+  // unchanged.
+  const openModelUrl = deps.openModelUrl ?? loadConfig().openModelUrl;
+  const glimmer = openModelUrl
+    ? await glimmerVariants(quote, {
+        openModelUrl,
+        fetchFn,
+        model: loadConfig().openModelName,
+      })
+    : [];
+  const allVariants = [
+    ...new Set([
+      ...variants.slice(0, 2),
+      ...glimmer.slice(0, 1),
+      ...variants.slice(2),
+      ...glimmer.slice(1),
+    ]),
+  ];
 
   // 2. Search path + shortlist scoring. A YouTube failure (bad creator, API
   // error) must not end the request: continue to the memory fallback (§7.1, §7.3).
@@ -525,7 +549,7 @@ export async function locateQuote(
       engine = creatorInput
         ? await searchChannel({
             quote,
-            variants,
+            variants: allVariants,
             creator: creatorInput,
             sinceDays: input.sinceDays,
             apiKey: youtubeApiKey,
@@ -534,7 +558,7 @@ export async function locateQuote(
           })
         : await searchEverywhere({
             quote,
-            variants,
+            variants: allVariants,
             apiKey: youtubeApiKey,
             onProgress,
             reserveQuota: reserveSearchQuota,
@@ -572,7 +596,7 @@ export async function locateQuote(
         creatorLine: creatorInput || "UNKNOWN",
         sceneLine: input.scene.trim(),
         whenLine,
-        variants,
+        variants: allVariants,
         shortlist: engine.shortlist,
       },
       llm,
@@ -633,7 +657,7 @@ export async function locateQuote(
         creatorLine: creatorInput || "UNKNOWN",
         sceneLine: input.scene.trim(),
         whenLine,
-        variants,
+        variants: allVariants,
         shortlist: engine.shortlist,
       },
       llm,

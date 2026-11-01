@@ -94,6 +94,7 @@ interface MetaCanned {
 
 interface MockState {
   metaQueue: MetaCanned[];
+  glimmerQueue: MetaCanned[];
   seen: string[];
 }
 
@@ -122,6 +123,13 @@ function makeFetch(state: MockState): typeof fetch {
       const next = state.metaQueue.shift();
       if (!next) {
         throw new Error(`unexpected Meta call: ${href}`);
+      }
+      return jsonResponse(next.body, next.status);
+    }
+    if (parsed.hostname === "glimmer.test") {
+      const next = state.glimmerQueue.shift();
+      if (!next) {
+        throw new Error(`unexpected Glimmer call: ${href}`);
       }
       return jsonResponse(next.body, next.status);
     }
@@ -154,8 +162,15 @@ const TEST_LLM: LlmClient = {
   textModel: "muse-spark-test",
 };
 
-function setup(metaQueue: MetaCanned[] = []): MockState {
-  const state: MockState = { metaQueue: [...metaQueue], seen: [] };
+function setup(
+  metaQueue: MetaCanned[] = [],
+  glimmerQueue: MetaCanned[] = [],
+): MockState {
+  const state: MockState = {
+    metaQueue: [...metaQueue],
+    glimmerQueue: [...glimmerQueue],
+    seen: [],
+  };
   const fetchMock = makeFetch(state);
   vi.stubGlobal("fetch", fetchMock);
   return state;
@@ -623,4 +638,132 @@ describe("locateQuote", () => {
       true,
     );
   });
+
+  it("appends Glimmer variants to the search queries", async () => {
+    const state = setup(
+      [
+        {
+          status: 200,
+          body: chatBody(
+            JSON.stringify(["spark one", "spark two", "spark three"]),
+          ),
+        },
+        { status: 200, body: chatBody(RANK_VID1_REPLY) },
+      ],
+      [
+        {
+          status: 200,
+          body: chatBody(JSON.stringify(["glimmer moonshot"])),
+        },
+      ],
+    );
+    const result = await locateQuote(
+      { quote: "quantum bicycle", creator: "", scene: "", sinceDays: 0 },
+      {
+        llm: TEST_LLM,
+        youtubeApiKey: "yt-key",
+        fetchFn: fetch,
+        openModelUrl: "http://glimmer.test/v1",
+      },
+    );
+    expect(result.found).toBe(true);
+    const quoteQs = [
+      `q=${encodeURIComponent('"quantum bicycle"')}`,
+      `q=${encodeURIComponent("quantum bicycle")}`,
+    ];
+    const variantSearches = state.seen.filter(
+      (line) =>
+        line.includes("/youtube/v3/search") &&
+        !quoteQs.some((q) => line.includes(q)),
+    );
+    expect(variantSearches).toHaveLength(3);
+    expect(
+      variantSearches.some((line) =>
+        line.includes(`q=${encodeURIComponent("glimmer moonshot")}`),
+      ),
+    ).toBe(true);
+    expect(state.glimmerQueue).toHaveLength(0);
+  });
+
+  it("skips Glimmer when unconfigured", async () => {
+    const state = setup([
+      { status: 200, body: chatBody(VARIANTS_REPLY) },
+      { status: 200, body: chatBody(RANK_VID1_REPLY) },
+    ]);
+    const result = await locateQuote(
+      { quote: "quantum bicycle", creator: "", scene: "", sinceDays: 0 },
+      {
+        llm: TEST_LLM,
+        youtubeApiKey: "yt-key",
+        fetchFn: fetch,
+        openModelUrl: "",
+      },
+    );
+    expect(result.found).toBe(true);
+    expect(
+      state.seen.some((line) => line.includes("glimmer.test")),
+    ).toBe(false);
+  });
+
+  it("falls back to Spark-only when Glimmer fails", async () => {
+    const state = setup(
+      [
+        { status: 200, body: chatBody(VARIANTS_REPLY) },
+        { status: 200, body: chatBody(RANK_VID1_REPLY) },
+      ],
+      [{ status: 500, body: {} }],
+    );
+    const result = await locateQuote(
+      { quote: "quantum bicycle", creator: "", scene: "", sinceDays: 0 },
+      {
+        llm: TEST_LLM,
+        youtubeApiKey: "yt-key",
+        fetchFn: fetch,
+        openModelUrl: "http://glimmer.test/v1",
+      },
+    );
+    expect(result.found).toBe(true);
+    expect(result.videoUrl).toBe(youtubeWatchUrl("vid1"));
+    const searches = state.seen.filter((line) =>
+      line.includes("/youtube/v3/search"),
+    );
+    expect(
+      searches.some((line) =>
+        line.includes(`q=${encodeURIComponent("quantum bike")}`),
+      ),
+    ).toBe(true);
+  });
+
+  it("still completes when Glimmer never answers", async () => {
+    setup([
+      { status: 200, body: chatBody(VARIANTS_REPLY) },
+      { status: 200, body: chatBody(RANK_VID1_REPLY) },
+    ]);
+    const hangingFetch = ((
+      url: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      if (String(url).includes("glimmer.test")) {
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () =>
+            reject(new Error("aborted")),
+          );
+        });
+      }
+      return fetch(url, init);
+    }) as unknown as typeof fetch;
+    // Waits out the real 5s Glimmer abort: fake timers don't drive
+    // AbortSignal.timeout, so this proves the production timeout path.
+    const result = await locateQuote(
+      { quote: "quantum bicycle", creator: "", scene: "", sinceDays: 0 },
+      {
+        llm: TEST_LLM,
+        youtubeApiKey: "yt-key",
+        fetchFn: hangingFetch,
+        openModelUrl: "http://glimmer.test/v1",
+      },
+    );
+    expect(result.found).toBe(true);
+    expect(result.videoUrl).toBe(youtubeWatchUrl("vid1"));
+  }, 15000);
 });

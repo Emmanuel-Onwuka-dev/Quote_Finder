@@ -8,6 +8,7 @@ export interface ServerConfig {
   transcriptionModel: string;
   imageModel: string;
   openModelUrl: string;
+  openModelName: string;
   googleClientId: string;
   googleClientSecret: string;
   googleRedirectUri: string;
@@ -25,6 +26,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       env.TRANSCRIPTION_MODEL ?? "muse-voice-transcribe-1.0",
     imageModel: env.IMAGE_MODEL ?? "muse-image-1.0",
     openModelUrl: env.OPEN_MODEL_URL ?? "",
+    openModelName: env.OPEN_MODEL_NAME ?? "glimmer",
     googleClientId: env.GOOGLE_CLIENT_ID ?? "",
     googleClientSecret: env.GOOGLE_CLIENT_SECRET ?? "",
     googleRedirectUri: env.GOOGLE_REDIRECT_URI ?? "",

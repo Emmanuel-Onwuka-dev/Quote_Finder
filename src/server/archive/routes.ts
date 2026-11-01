@@ -7,6 +7,7 @@
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
+import { logError } from "../log";
 import { listUploadsPage, resolveChannel, videosById } from "../youtube";
 import { SSE_HEADERS, formatSseEvent } from "../quote-stream";
 import { decryptToken, encryptToken } from "./crypto";
@@ -549,7 +550,8 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
         decryptToken(row.token_enc, deps.archiveTokenKey),
         fetchFn,
       );
-    } catch {
+    } catch (error) {
+      logError("token revoke", error);
       revoked = false;
     }
     store.deleteChannel(row.channel_id);

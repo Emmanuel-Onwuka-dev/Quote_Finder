@@ -4,6 +4,7 @@
 // client hook consumes this.
 
 import type { Context } from "hono";
+import { logError } from "./log";
 
 export interface TranscribeDeps {
   modelApiKey: string;
@@ -181,7 +182,8 @@ export function createTranscribeHandler(deps: TranscribeDeps) {
           headers: { Authorization: `Bearer ${deps.modelApiKey}` },
           body: form,
         });
-      } catch {
+      } catch (error) {
+        logError("transcribe", error);
         return c.json({ message: "transcription request failed" }, 502);
       }
       if (res.status === 429) {
@@ -210,7 +212,8 @@ export function createTranscribeHandler(deps: TranscribeDeps) {
       try {
         transcript = ((await res.json()) as { transcript?: unknown })
           .transcript;
-      } catch {
+      } catch (error) {
+        logError("transcribe", error, { status: res.status });
         return c.json(
           { message: "transcription returned no text" },
           502,

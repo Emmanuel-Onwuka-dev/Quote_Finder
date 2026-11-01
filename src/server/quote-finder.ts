@@ -7,6 +7,7 @@ import type { ArchiveStore } from "./archive/store";
 import { loadConfig, requireKey } from "./config";
 import { glimmerVariants } from "./glimmer";
 import { authHeaders, createLlmClient, type LlmClient } from "./llm-client";
+import { logError } from "./log";
 import {
   CHANNELS_LIST_COST,
   PLAYLIST_ITEMS_COST,
@@ -193,7 +194,8 @@ export async function queryVariants(
     return [
       ...new Set(parsed.data.map((v) => v.trim()).filter((v) => v.length > 0)),
     ].slice(0, 5);
-  } catch {
+  } catch (error) {
+    logError("query variants", error, { quoteLength: quote.length });
     return [];
   }
 }
@@ -274,7 +276,10 @@ export async function rankShortlist(
       return [];
     }
     return parsed.data.picks.filter((pick) => pick.url.length > 0);
-  } catch {
+  } catch (error) {
+    logError("ranking", error, {
+      shortlistSize: context.shortlist.length,
+    });
     return [];
   }
 }
@@ -352,7 +357,10 @@ export async function urlExists(
       });
     }
     return res.ok;
-  } catch {
+  } catch (error) {
+    logError("link verification", error, {
+      youtube: isYouTubeWatchUrl(url),
+    });
     return false;
   }
 }
@@ -674,7 +682,10 @@ export async function locateQuote(
       llm,
       fetchFn,
     );
-  } catch {
+  } catch (error) {
+    logError("memory fallback", error, {
+      shortlistSize: engine.shortlist.length,
+    });
     if (deps.skipEngine) {
       throw new Error(SEARCH_QUOTA_SPENT);
     }

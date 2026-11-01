@@ -577,6 +577,33 @@ describe("locateQuote", () => {
     ).toBe(true);
   });
 
+  it("logs the ranking failure and still returns when ranking throws", async () => {
+    setup([
+      { status: 200, body: chatBody(VARIANTS_REPLY) },
+      { status: 500, body: {} },
+      { status: 200, body: chatBody(fallbackReply({ found: false })) },
+    ]);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const result = await locateQuote(
+        {
+          quote: "xylophone zephyr nebula",
+          creator: "@tester",
+          scene: "",
+          sinceDays: 0,
+        },
+        { llm: TEST_LLM, youtubeApiKey: "yt-key", fetchFn: fetch },
+      );
+      expect(result.found).toBe(false);
+      expect(errors).toHaveBeenCalledTimes(1);
+      expect(String(errors.mock.calls[0]?.[0])).toContain(
+        "[quotefinder] ranking failed",
+      );
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
   it("still answers from memory when the YouTube search fails", async () => {
     const state = setup([
       { status: 200, body: chatBody(VARIANTS_REPLY) },

@@ -5,6 +5,7 @@
 
 import { z } from "zod";
 import type { Context } from "hono";
+import { logError } from "./log";
 
 export interface QuoteCardDeps {
   modelApiKey: string;
@@ -101,7 +102,8 @@ export function createQuoteCardHandler(deps: QuoteCardDeps) {
           n: 1,
         }),
       });
-    } catch {
+    } catch (error) {
+      logError("quote card", error);
       return c.json({ message: "quote card request failed" }, 502);
     }
     if (!res.ok) {
@@ -110,7 +112,8 @@ export function createQuoteCardHandler(deps: QuoteCardDeps) {
     let data: unknown;
     try {
       data = await res.json();
-    } catch {
+    } catch (error) {
+      logError("quote card", error, { status: res.status });
       return c.json({ message: "quote card returned no image" }, 502);
     }
     const images = GenerationsSchema.safeParse(data);

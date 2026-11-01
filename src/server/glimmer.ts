@@ -6,6 +6,7 @@
 // no URL is configured.
 
 import { z } from "zod";
+import { logError } from "./log";
 
 export interface GlimmerDeps {
   openModelUrl: string;
@@ -83,7 +84,8 @@ export async function glimmerVariants(
     return [
       ...new Set(parsed.data.map((v) => v.trim()).filter((v) => v.length > 0)),
     ].slice(0, GLIMMER_VARIANTS_MAX);
-  } catch {
+  } catch (error) {
+    logError("Glimmer rephrasing", error);
     return [];
   }
 }

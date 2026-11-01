@@ -2,6 +2,7 @@
 // scraping, no downloads. Matching uses titles and descriptions only.
 
 import { analyzeOverlap, keyCoverage } from "./fuzzy";
+import { logError } from "./log";
 
 export interface VideoMeta {
   id: string;
@@ -452,9 +453,10 @@ export async function searchChannel(
       })
       .sort((a, b) => b.score - a.score)
       .map((entry) => entry.video);
-  } catch {
+  } catch (error) {
     // §5.1: when the full index cannot be built, fall back to in-channel
     // search (the quote plus the Muse variants as extra queries).
+    logError("YouTube search", error, { quoteLength: quote.length });
     onProgress("Indexing uploads", "index unavailable — searching in-channel");
     const searched = await searchQueries(
       quote,

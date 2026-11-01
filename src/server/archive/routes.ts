@@ -250,6 +250,7 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
 
   app.get("/status", (c) => {
     const now = deps.now ?? new Date();
+    store.purgeExpired(now);
     const mine = new Set(channelsOf(getCookie(c, SESSION_COOKIE)));
     return c.json({
       creators: store
@@ -487,6 +488,7 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
       return c.json({ message: "channel is not connected" }, 404);
     }
     const now = deps.now ?? new Date();
+    store.purgeExpired(now);
     const toCandidates = (videos: MatchableVideo[]): ArchiveVideoCues[] =>
       videos.map((video) => ({
         videoId: video.video_id,

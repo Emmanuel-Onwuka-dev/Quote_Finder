@@ -313,6 +313,28 @@ describe("GET /status", () => {
       budget: { spentUnits: 300, capUnits: 5000 },
     });
   });
+
+  it("purges expired cue text", async () => {
+    const now = new Date("2026-10-30T12:00:00Z");
+    const { app, store } = setup({}, { now });
+    saveConnectedChannel(store);
+    store.saveVideoWithCues({
+      channelId: "UCchan1",
+      videoId: "vid1",
+      title: "Old vid",
+      publishedAt: "",
+      trackKind: "standard",
+      fetchedAt: "2026-09-01T00:00:00Z",
+      cues: [{ idx: 1, startSeconds: 1, endSeconds: 2, text: "hi" }],
+    });
+    const res = await app.request("/api/archive/status", {
+      headers: { Cookie: sessionCookie("UCchan1", now.getTime()) },
+    });
+    expect(res.status).toBe(200);
+    expect(store.getIndexedVideos("UCchan1")).toEqual([
+      expect.objectContaining({ video_id: "vid1", cue_count: 0 }),
+    ]);
+  });
 });
 
 describe("POST /disconnect", () => {
@@ -1075,6 +1097,7 @@ describe("POST /search", () => {
     store: ArchiveStore,
     channelId = "UCchan1",
     videoId = "vid1",
+    fetchedAt: string = new Date().toISOString(),
   ): void {
     store.saveVideoWithCues({
       channelId,
@@ -1082,7 +1105,7 @@ describe("POST /search", () => {
       title: "Workshop rebuild",
       publishedAt: "2026-10-29T00:00:00Z",
       trackKind: "standard",
-      fetchedAt: new Date().toISOString(),
+      fetchedAt,
       cues: searchCues,
     });
   }
@@ -1172,6 +1195,47 @@ describe("POST /search", () => {
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ matches: [] });
+  });
+
+  it("drops cues older than 30 days and purges their text", async () => {
+    const now = new Date("2026-10-30T12:00:00Z");
+    const { app, store } = setup({}, { now });
+    saveConnectedChannel(store);
+    saveSearchVideo(store, "UCchan1", "vid1", "2026-09-01T00:00:00Z");
+    expect(store.getIndexedVideos("UCchan1")).toEqual([
+      expect.objectContaining({ video_id: "vid1", cue_count: 3 }),
+    ]);
+    const res = await postSearch(
+      app,
+      { channelId: "UCchan1", query: searchQuery },
+      sessionCookie("UCchan1", now.getTime()),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ matches: [] });
+    expect(store.getIndexedVideos("UCchan1")).toEqual([
+      expect.objectContaining({ video_id: "vid1", cue_count: 0 }),
+    ]);
+  });
+
+  it("still returns cues within 30 days", async () => {
+    const now = new Date("2026-10-30T12:00:00Z");
+    const { app, store } = setup({}, { now });
+    saveConnectedChannel(store);
+    saveSearchVideo(store, "UCchan1", "vid1", "2026-10-29T00:00:00Z");
+    const res = await postSearch(
+      app,
+      { channelId: "UCchan1", query: searchQuery },
+      sessionCookie("UCchan1", now.getTime()),
+    );
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as {
+      matches: Array<Record<string, unknown>>;
+    };
+    expect(data.matches).toHaveLength(1);
+    expect(data.matches[0]).toMatchObject({ startSeconds: 5 });
+    expect(store.getIndexedVideos("UCchan1")).toEqual([
+      expect.objectContaining({ video_id: "vid1", cue_count: 3 }),
+    ]);
   });
 
   it("rejects invalid bodies with a 400", async () => {

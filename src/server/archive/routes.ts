@@ -11,12 +11,6 @@ import { SSE_HEADERS, formatSseEvent } from "../quote-stream";
 import { decryptToken, encryptToken } from "./crypto";
 import { INDEX_PAUSED_MESSAGE, runIndexing } from "./indexing";
 import {
-  matchArchive,
-  noMatchResult,
-  toArchiveResult,
-  type ArchiveVideoCues,
-} from "./match";
-import {
   SESSION_COOKIE,
   SESSION_TTL_MS,
   issueSession,
@@ -38,7 +32,6 @@ import {
   todayKey,
   videoFreshness,
   type ArchiveStore,
-  type MatchableVideo,
 } from "./store";
 
 export interface ArchiveDeps {
@@ -58,17 +51,6 @@ const PENDING_TTL_MS = 10 * 60 * 1000;
 /** Cap on concurrent OAuth handshakes; oldest-first eviction. Without a
  * cap, hits on /oauth/start grow the pending map without bound. */
 const MAX_PENDING_OAUTH = 100;
-
-/** Archive search rate limit: 5 searches per minute per client IP. */
-const SEARCH_LIMIT = 5;
-const SEARCH_WINDOW_MS = 60 * 1000;
-/** At most one viewer-triggered refresh per channel per hour. */
-const REFRESH_CHANNEL_MS = 60 * 60 * 1000;
-/** Never re-download a video refreshed in the last 24 hours. */
-const REFRESH_VIDEO_MS = 24 * 60 * 60 * 1000;
-/** Result note when the viewer budget is spent. */
-const VIEWER_BUDGET_SPENT_NOTE =
-  "Viewer refresh budget spent — searched stored captions only.";
 
 /**
  * Where to send the browser after OAuth: the origin that started the flow
@@ -97,42 +79,6 @@ const IndexSchema = z.object({
   videoIds: z.array(z.string().min(1)).min(1).max(200),
 });
 
-const ListedSchema = z.object({
-  channelId: z.string().min(1),
-  listed: z.boolean(),
-});
-
-const SearchSchema = z.object({
-  channelId: z.string().min(1),
-  quote: z.string().trim().min(1),
-  variants: z.array(z.string().trim().min(1)).max(3).optional(),
-  sinceDays: z.number().int().min(0).max(3650).optional(),
-});
-
-/**
- * On-miss ASR refreshes per search (§7.4 as approved). Bounded for
- * interactive latency and quota: at most 3 videos (~750 units).
- */
-const MAX_REFRESH_PER_SEARCH = 3;
-
-function inWindow(
-  publishedAt: string,
-  sinceDays: number,
-  now: Date,
-): boolean {
-  if (!sinceDays) {
-    return true;
-  }
-  if (!publishedAt) {
-    return true;
-  }
-  const published = Date.parse(publishedAt);
-  if (Number.isNaN(published)) {
-    return true;
-  }
-  return published >= now.getTime() - sinceDays * 24 * 60 * 60 * 1000;
-}
-
 export function createArchiveRoutes(deps: ArchiveDeps) {
   const app = new Hono();
   const store =
@@ -142,7 +88,6 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
     string,
     { verifier: string; returnBase: string | null; createdAt: number }
   >();
-  const searchHits = new Map<string, number[]>();
 
   function prunePending(now: number): void {
     for (const [state, session] of pending) {
@@ -170,36 +115,6 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
 
   function channelsOf(cookieValue: string | undefined): string[] {
     return verifySession(cookieValue, nowMs(), deps.archiveTokenKey) ?? [];
-  }
-
-  /** Sliding-window search limiter. Buckets are pruned on every check
-   * so idle IPs drop out of the map. */
-  function checkSearchRate(
-    ip: string,
-    nowMs: number,
-  ): { allowed: true } | { allowed: false; retryAfter: number } {
-    const cutoff = nowMs - SEARCH_WINDOW_MS;
-    for (const [key, hits] of searchHits) {
-      const fresh = hits.filter((at) => at > cutoff);
-      if (fresh.length === 0) {
-        searchHits.delete(key);
-      } else {
-        searchHits.set(key, fresh);
-      }
-    }
-    const hits = searchHits.get(ip) ?? [];
-    if (hits.length >= SEARCH_LIMIT) {
-      const oldest = hits[0] ?? nowMs;
-      return {
-        allowed: false,
-        retryAfter: Math.max(
-          1,
-          Math.ceil((oldest + SEARCH_WINDOW_MS - nowMs) / 1000),
-        ),
-      };
-    }
-    searchHits.set(ip, [...hits, nowMs]);
-    return { allowed: true };
   }
 
   /** Null on a match; otherwise the 401 (session missing, invalid, or
@@ -345,14 +260,28 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
     });
   });
 
+  // Creator-only (§13A): a signed-in creator sees their own channels,
+  // never anyone else's, and there is no public creator list.
   app.get("/creators", (c) => {
+    const ids = verifySession(
+      getCookie(c, SESSION_COOKIE),
+      nowMs(),
+      deps.archiveTokenKey,
+    );
+    if (ids === null) {
+      return c.json({ message: "creator sign-in required" }, 401);
+    }
+    const mine = new Set(ids);
     const now = deps.now ?? new Date();
     return c.json({
-      creators: store.listListedCreators().map((row) => ({
-        channelId: row.channel_id,
-        channelTitle: row.channel_title,
-        videoCount: store.countFreshVideos(row.channel_id, now),
-      })),
+      creators: store
+        .listCreators()
+        .filter((row) => mine.has(row.channel_id))
+        .map((row) => ({
+          channelId: row.channel_id,
+          channelTitle: row.channel_title,
+          videoCount: store.countFreshVideos(row.channel_id, now),
+        })),
     });
   });
 
@@ -522,187 +451,6 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
       },
     });
     return new Response(stream, { headers: SSE_HEADERS });
-  });
-
-  app.post("/search", async (c) => {
-    // Socket address, never a client-supplied header: those are trivially
-    // spoofed, and this server takes direct connections. No env in the
-    // test client, so fall back to a shared bucket there.
-    const env = (c.env ?? {}) as {
-      incoming?: { socket?: { remoteAddress?: string } };
-    };
-    const rate = checkSearchRate(
-      env.incoming?.socket?.remoteAddress ?? "unknown",
-      Date.now(),
-    );
-    if (!rate.allowed) {
-      c.header("Retry-After", String(rate.retryAfter));
-      return c.json(
-        { message: "too many archive searches — try again in a minute" },
-        429,
-      );
-    }
-    let raw: unknown;
-    try {
-      raw = await c.req.json();
-    } catch {
-      return c.json({ message: "request body must be JSON" }, 400);
-    }
-    const parsed = SearchSchema.safeParse(raw);
-    if (!parsed.success) {
-      return c.json(
-        { message: "channelId and a non-empty quote are required" },
-        400,
-      );
-    }
-    const { channelId, quote } = parsed.data;
-    const variants = parsed.data.variants ?? [];
-    const sinceDays = parsed.data.sinceDays ?? 0;
-    const creator = store.getCreator(channelId);
-    if (!creator || creator.listed !== 1) {
-      return c.json(
-        { message: "channel is not available for search" },
-        404,
-      );
-    }
-    const now = deps.now ?? new Date();
-    const channelTitle = creator.channel_title;
-    const toCandidates = (videos: MatchableVideo[]): ArchiveVideoCues[] =>
-      videos
-        .filter((video) => inWindow(video.published_at, sinceDays, now))
-        .map((video) => ({
-          videoId: video.video_id,
-          title: video.title,
-          publishedAt: video.published_at,
-          channelTitle,
-          trackKind: video.track_kind,
-          cues: video.cues,
-        }));
-    const fresh = matchArchive(
-      toCandidates(store.getMatchableVideos(channelId, now)),
-      quote,
-      variants,
-    );
-    if (fresh) {
-      return c.json(toArchiveResult(fresh, [], false));
-    }
-    // On-miss ASR refresh (§7.4 as approved): re-download expired
-    // auto-generated captions so they can match. Expired standard
-    // captions stay out until the creator re-indexes them. At most one
-    // refresh per channel per hour, and never a video refreshed in the
-    // last 24 hours — both tracked in the database.
-    const lastRefresh = store.lastChannelRefreshAt(channelId);
-    const refreshedRecently =
-      lastRefresh !== null &&
-      Date.parse(lastRefresh) > now.getTime() - REFRESH_CHANNEL_MS;
-    const exclude = new Set(
-      store.recentlyRefreshedVideoIds(
-        channelId,
-        new Date(now.getTime() - REFRESH_VIDEO_MS),
-      ),
-    );
-    const stale = refreshedRecently
-      ? []
-      : store
-          .getStaleAsrVideos(channelId, now)
-          .filter((video) => !exclude.has(video.video_id))
-          .slice(0, MAX_REFRESH_PER_SEARCH);
-    if (stale.length === 0) {
-      return c.json(noMatchResult([], false));
-    }
-    let accessToken: string;
-    try {
-      const token = await accessTokenFor(channelId);
-      if (!token) {
-        return c.json({ message: "channel is not connected" }, 404);
-      }
-      accessToken = token;
-    } catch (error) {
-      return c.json(
-        {
-          message:
-            error instanceof Error
-              ? error.message
-              : "Could not refresh YouTube access",
-        },
-        502,
-      );
-    }
-    const run = await runIndexing({
-      videoIds: stale.map((video) => video.video_id),
-      accessToken,
-      store,
-      fetchFn,
-      now,
-      budgetKind: "viewer",
-    });
-    const metaById = new Map(
-      stale.map((video) => [video.video_id, video] as const),
-    );
-    for (const video of run.indexed) {
-      const meta = metaById.get(video.videoId);
-      if (!meta) {
-        continue;
-      }
-      store.saveVideoWithCues({
-        channelId,
-        videoId: video.videoId,
-        title: meta.title,
-        publishedAt: meta.published_at,
-        trackKind: video.trackKind,
-        fetchedAt: now.toISOString(),
-        cues: video.cues,
-      });
-    }
-    const refreshed = run.indexed.map((video) => video.videoId);
-    // Record every attempt, not just successes: a skipped video (no track,
-    // API error) cost a listing call, and retrying it on every search
-    // would drain the shared viewer budget.
-    store.recordRefreshes(
-      channelId,
-      [...refreshed, ...run.skipped.map((video) => video.videoId)],
-      now,
-    );
-    const notes = run.paused ? [VIEWER_BUDGET_SPENT_NOTE] : [];
-    const retry = matchArchive(
-      toCandidates(store.getMatchableVideos(channelId, now)),
-      quote,
-      variants,
-    );
-    return c.json(
-      retry
-        ? toArchiveResult(retry, refreshed, run.paused, notes)
-        : noMatchResult(refreshed, run.paused, notes),
-    );
-  });
-
-  app.post("/listed", async (c) => {
-    let raw: unknown;
-    try {
-      raw = await c.req.json();
-    } catch {
-      return c.json({ message: "request body must be JSON" }, 400);
-    }
-    const parsed = ListedSchema.safeParse(raw);
-    if (!parsed.success) {
-      return c.json(
-        { message: "channelId and listed are required" },
-        400,
-      );
-    }
-    const denied = requireChannel(
-      getCookie(c, SESSION_COOKIE),
-      parsed.data.channelId,
-    );
-    if (denied) {
-      return c.json({ message: denied.message }, denied.status);
-    }
-    const row = store.getCreator(parsed.data.channelId);
-    if (!row) {
-      return c.json({ message: "channel is not connected" }, 404);
-    }
-    store.setListed(row.channel_id, parsed.data.listed);
-    return c.json({ ok: true, listed: parsed.data.listed });
   });
 
   app.post("/disconnect", async (c) => {

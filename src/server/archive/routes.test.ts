@@ -996,642 +996,26 @@ describe("archive storage", () => {
   });
 });
 
-const SEARCH_NOW = new Date("2026-10-30T12:00:00Z");
-const SEARCH_QUOTE = "today we rebuild the carburetor from absolute scratch";
-const SEARCH_CUES = [
-  { idx: 1, startSeconds: 0, endSeconds: 2, text: "welcome back to the workshop" },
-  { idx: 2, startSeconds: 5, endSeconds: 7, text: "today we rebuild the carburetor" },
-  { idx: 3, startSeconds: 9, endSeconds: 11, text: "from absolute scratch together" },
-  { idx: 4, startSeconds: 14, endSeconds: 16, text: "grab your wrenches and follow along" },
-];
-const GARDEN_CUES = [
-  { idx: 1, startSeconds: 0, endSeconds: 2, text: "evening stroll through the garden" },
-  { idx: 2, startSeconds: 4, endSeconds: 6, text: "the roses smell wonderful tonight" },
-  { idx: 3, startSeconds: 8, endSeconds: 10, text: "we should visit again soon" },
-];
-const REFRESH_SRT = [
-  "1",
-  "00:00:01,000 --> 00:00:03,000",
-  "welcome back to the workshop",
-  "",
-  "2",
-  "00:00:05,000 --> 00:00:07,000",
-  "today we rebuild the carburetor",
-  "",
-  "3",
-  "00:00:09,000 --> 00:00:11,000",
-  "from absolute scratch together",
-  "",
-].join("\n");
-
-function saveListedChannel(store: ArchiveStore): void {
-  saveConnectedChannel(store);
-  store.setListed("UCchan1", true);
-}
-
-async function postSearch(app: Hono, body: unknown): Promise<Response> {
-  return app.request("/api/archive/search", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
-
-function saveFreshVideo(
-  store: ArchiveStore,
-  overrides: {
-    videoId?: string;
-    title?: string;
-    publishedAt?: string;
-    trackKind?: string;
-    cues?: typeof SEARCH_CUES;
-  } = {},
-): void {
-  store.saveVideoWithCues({
-    channelId: "UCchan1",
-    videoId: "vid1",
-    title: "Workshop rebuild",
-    publishedAt: "2026-10-29T00:00:00Z",
-    trackKind: "standard",
-    fetchedAt: "2026-10-29T00:00:00Z",
-    cues: SEARCH_CUES,
-    ...overrides,
-  });
-}
-
-describe("POST /search", () => {
-  it("finds a line in fresh captions with a verified timestamp", async () => {
-    const { app, store, seen } = setup({}, { now: SEARCH_NOW });
-    saveListedChannel(store);
-    saveFreshVideo(store);
-    const res = await postSearch(app, {
-      channelId: "UCchan1",
-      quote: SEARCH_QUOTE,
-    });
-    expect(res.status).toBe(200);
-    expect((await res.json()) as unknown).toEqual({
-      found: true,
-      confidence: "high",
-      creator: "Test Channel",
-      videoTitle: "Workshop rebuild",
-      videoUrl: "https://www.youtube.com/watch?v=vid1&t=5s",
-      publishedAt: "2026-10-29T00:00:00Z",
-      startSeconds: 5,
-      timestampVerified: true,
-      trackKind: "standard",
-      trackLabel: "verified from the creator's captions",
-      text: "today we rebuild the carburetor from absolute scratch together",
-      refreshed: [],
-      refreshPaused: false,
-      notes: [],
-    });
-    expect(seen).toEqual([]);
-  });
-
-  it("caps asr matches at medium", async () => {
-    const { app, store } = setup({}, { now: SEARCH_NOW });
-    saveListedChannel(store);
-    saveFreshVideo(store, { trackKind: "asr" });
-    const res = await postSearch(app, {
-      channelId: "UCchan1",
-      quote: SEARCH_QUOTE,
-    });
-    expect(res.status).toBe(200);
-    expect((await res.json()) as unknown).toMatchObject({
-      found: true,
-      confidence: "medium",
-      trackKind: "asr",
-      trackLabel: "verified from auto-generated captions",
-    });
-  });
-
-  it("reports a miss without calling Google", async () => {
-    const { app, store, seen } = setup({}, { now: SEARCH_NOW });
-    saveListedChannel(store);
-    saveFreshVideo(store);
-    const res = await postSearch(app, {
-      channelId: "UCchan1",
-      quote: "zebra elephant giraffe",
-    });
-    expect(res.status).toBe(200);
-    expect((await res.json()) as unknown).toEqual({
-      found: false,
-      confidence: null,
-      creator: "",
-      videoTitle: "",
-      videoUrl: "",
-      publishedAt: "",
-      startSeconds: 0,
-      timestampVerified: false,
-      trackKind: null,
-      trackLabel: "",
-      text: "",
-      refreshed: [],
-      refreshPaused: false,
-      notes: [],
-    });
-    expect(seen).toEqual([]);
-  });
-
-  it("rejects unlisted and unknown channels with 404", async () => {
-    const { app, store } = setup({}, { now: SEARCH_NOW });
+describe("GET /creators", () => {
+  it("lists only the caller's own channels with fresh counts", async () => {
+    const { app, store } = setup(
+      {},
+      { now: new Date("2026-10-30T12:00:00Z") },
+    );
     saveConnectedChannel(store);
-    const unlisted = await postSearch(app, {
-      channelId: "UCchan1",
-      quote: SEARCH_QUOTE,
-    });
-    expect(unlisted.status).toBe(404);
-    expect((await unlisted.json()) as unknown).toEqual({
-      message: "channel is not available for search",
-    });
-    const unknown = await postSearch(app, {
-      channelId: "UCmissing",
-      quote: SEARCH_QUOTE,
-    });
-    expect(unknown.status).toBe(404);
-    expect((await unknown.json()) as unknown).toEqual({
-      message: "channel is not available for search",
-    });
-  });
-
-  it("rejects invalid bodies with a 400", async () => {
-    const { app } = setup({}, { now: SEARCH_NOW });
-    expect((await postSearch(app, "not json{")).status).toBe(400);
-    expect((await postSearch(app, {})).status).toBe(400);
-    expect(
-      (await postSearch(app, { channelId: "UCchan1", quote: "   " })).status,
-    ).toBe(400);
-    expect(
-      (
-        await postSearch(app, {
-          channelId: "UCchan1",
-          quote: SEARCH_QUOTE,
-          variants: ["a", "b", "c", "d"],
-        })
-      ).status,
-    ).toBe(400);
-    expect(
-      (
-        await postSearch(app, {
-          channelId: "UCchan1",
-          quote: SEARCH_QUOTE,
-          sinceDays: -1,
-        })
-      ).status,
-    ).toBe(400);
-  });
-
-  it("lets variants rescue a miss", async () => {
-    const { app, store } = setup({}, { now: SEARCH_NOW });
-    saveListedChannel(store);
-    saveFreshVideo(store);
-    const res = await postSearch(app, {
-      channelId: "UCchan1",
-      quote: "completely unrelated sentence",
-      variants: [SEARCH_QUOTE],
-    });
-    expect(res.status).toBe(200);
-    expect((await res.json()) as unknown).toMatchObject({
-      found: true,
-      startSeconds: 5,
-    });
-  });
-
-  it("filters by time window but keeps undated videos", async () => {
-    const { app, store } = setup({}, { now: SEARCH_NOW });
-    saveListedChannel(store);
-    saveFreshVideo(store, {
-      videoId: "old",
-      title: "Old vid",
-      publishedAt: "2020-01-01T00:00:00Z",
-    });
-    const excluded = await postSearch(app, {
-      channelId: "UCchan1",
-      quote: SEARCH_QUOTE,
-      sinceDays: 7,
-    });
-    expect((await excluded.json()) as unknown).toMatchObject({
-      found: false,
-    });
-    const included = await postSearch(app, {
-      channelId: "UCchan1",
-      quote: SEARCH_QUOTE,
-      sinceDays: 0,
-    });
-    expect((await included.json()) as unknown).toMatchObject({
-      found: true,
-      videoTitle: "Old vid",
-    });
-    saveFreshVideo(store, {
-      videoId: "undated",
-      title: "Undated vid",
-      publishedAt: "",
-    });
-    const undated = await postSearch(app, {
-      channelId: "UCchan1",
-      quote: SEARCH_QUOTE,
-      sinceDays: 7,
-    });
-    expect((await undated.json()) as unknown).toMatchObject({
-      found: true,
-      videoTitle: "Undated vid",
-    });
-  });
-
-  it("skips expired standard captions without refreshing", async () => {
-    const { app, store, seen } = setup({}, { now: SEARCH_NOW });
-    saveListedChannel(store);
     store.saveVideoWithCues({
       channelId: "UCchan1",
       videoId: "vid1",
       title: "Workshop rebuild",
       publishedAt: "2026-10-29T00:00:00Z",
       trackKind: "standard",
-      fetchedAt: "2026-09-01T00:00:00Z",
-      cues: SEARCH_CUES,
+      fetchedAt: "2026-10-29T00:00:00Z",
+      cues: [{ idx: 1, startSeconds: 1, endSeconds: 2, text: "hi" }],
     });
-    const res = await postSearch(app, {
-      channelId: "UCchan1",
-      quote: SEARCH_QUOTE,
-    });
-    expect(res.status).toBe(200);
-    expect((await res.json()) as unknown).toMatchObject({
-      found: false,
-      refreshed: [],
-    });
-    expect(seen).toEqual([]);
-  });
-
-  it("refreshes expired asr captions on a miss and persists them", async () => {
-    const { app, store, seen } = setup(
-      {
-        tracks: {
-          status: 200,
-          body: {
-            items: [
-              {
-                id: "t1",
-                snippet: {
-                  language: "en",
-                  trackKind: "asr",
-                  status: "serving",
-                },
-              },
-            ],
-          },
-        },
-        srt: { status: 200, body: REFRESH_SRT },
-      },
-      { now: SEARCH_NOW },
-    );
-    saveListedChannel(store);
-    saveFreshVideo(store, {
-      videoId: "garden",
-      title: "Garden walk",
-      cues: GARDEN_CUES,
-    });
-    store.saveVideoWithCues({
-      channelId: "UCchan1",
-      videoId: "oldvid",
-      title: "Old vid",
-      publishedAt: "2026-09-15T00:00:00Z",
-      trackKind: "asr",
-      fetchedAt: "2026-09-01T00:00:00Z",
-      cues: [],
-    });
-    const res = await postSearch(app, {
-      channelId: "UCchan1",
-      quote: SEARCH_QUOTE,
-    });
-    expect(res.status).toBe(200);
-    expect((await res.json()) as unknown).toMatchObject({
-      found: true,
-      confidence: "medium",
-      trackKind: "asr",
-      trackLabel: "verified from auto-generated captions",
-      videoTitle: "Old vid",
-      startSeconds: 5,
-      refreshed: ["oldvid"],
-      refreshPaused: false,
-    });
-    const callsAfterRefresh = seen.length;
-    expect(callsAfterRefresh).toBeGreaterThan(0);
-    const repeat = await postSearch(app, {
-      channelId: "UCchan1",
-      quote: SEARCH_QUOTE,
-    });
-    expect((await repeat.json()) as unknown).toMatchObject({ found: true });
-    expect(seen.length).toBe(callsAfterRefresh);
-  });
-
-  it("refreshes at most 3 stale videos per search", async () => {
-    const { app, store } = setup(
-      { srt: { status: 200, body: REFRESH_SRT } },
-      { now: SEARCH_NOW },
-    );
-    saveListedChannel(store);
-    for (const [videoId, publishedAt] of [
-      ["v1", "2026-09-10T00:00:00Z"],
-      ["v2", "2026-09-11T00:00:00Z"],
-      ["v3", "2026-09-12T00:00:00Z"],
-      ["v4", "2026-09-13T00:00:00Z"],
-    ] as const) {
-      store.saveVideoWithCues({
-        channelId: "UCchan1",
-        videoId,
-        title: videoId,
-        publishedAt,
-        trackKind: "asr",
-        fetchedAt: "2026-09-01T00:00:00Z",
-        cues: [],
-      });
-    }
-    const res = await postSearch(app, {
-      channelId: "UCchan1",
-      quote: SEARCH_QUOTE,
-    });
-    expect(res.status).toBe(200);
-    expect((await res.json()) as unknown).toMatchObject({
-      found: true,
-      refreshed: ["v4", "v3", "v2"],
-    });
-    const byId = new Map(
-      store.getIndexedVideos("UCchan1").map((video) => [video.video_id, video]),
-    );
-    expect(byId.get("v1")).toMatchObject({
-      fetched_at: "2026-09-01T00:00:00Z",
-      cue_count: 0,
-    });
-    expect(byId.get("v4")).toMatchObject({ cue_count: 3 });
-  });
-
-  it("reports a paused refresh without failing", async () => {
-    const { app, store, seen } = setup(
-      { srt: { status: 200, body: REFRESH_SRT } },
-      { now: SEARCH_NOW },
-    );
-    saveListedChannel(store);
-    expect(store.trySpend("2026-10-30", 1000, "viewer")).toBe(true);
-    store.saveVideoWithCues({
-      channelId: "UCchan1",
-      videoId: "oldvid",
-      title: "Old vid",
-      publishedAt: "2026-09-15T00:00:00Z",
-      trackKind: "asr",
-      fetchedAt: "2026-09-01T00:00:00Z",
-      cues: [],
-    });
-    const res = await postSearch(app, {
-      channelId: "UCchan1",
-      quote: SEARCH_QUOTE,
-    });
-    expect(res.status).toBe(200);
-    expect((await res.json()) as unknown).toMatchObject({
-      found: false,
-      refreshed: [],
-      refreshPaused: true,
-      notes: ["Viewer refresh budget spent — searched stored captions only."],
-    });
-    expect(seen.every((href) => href.includes("/token"))).toBe(true);
-  });
-});
-
-describe("search quotas", () => {
-  function seedStaleAsr(
-    store: ArchiveStore,
-    videoId: string,
-    publishedAt: string,
-  ): void {
-    store.saveVideoWithCues({
-      channelId: "UCchan1",
-      videoId,
-      title: videoId,
-      publishedAt,
-      trackKind: "asr",
-      fetchedAt: "2026-09-01T00:00:00Z",
-      cues: [],
-    });
-  }
-
-  it("allows one viewer-triggered refresh per channel per hour", async () => {
-    const { app, store, seen } = setup(
-      { srt: { status: 200, body: REFRESH_SRT } },
-      { now: SEARCH_NOW },
-    );
-    saveListedChannel(store);
-    for (const [videoId, publishedAt] of [
-      ["v1", "2026-09-10T00:00:00Z"],
-      ["v2", "2026-09-11T00:00:00Z"],
-      ["v3", "2026-09-12T00:00:00Z"],
-      ["v4", "2026-09-13T00:00:00Z"],
-    ] as const) {
-      seedStaleAsr(store, videoId, publishedAt);
-    }
-    const first = await postSearch(app, {
-      channelId: "UCchan1",
-      quote: SEARCH_QUOTE,
-    });
-    expect((await first.json()) as unknown).toMatchObject({
-      found: true,
-      refreshed: ["v4", "v3", "v2"],
-    });
-    const callsAfterFirst = seen.length;
-    const second = await postSearch(app, {
-      channelId: "UCchan1",
-      quote: "zebra elephant giraffe",
-    });
-    expect((await second.json()) as unknown).toMatchObject({
-      found: false,
-      refreshed: [],
-      refreshPaused: false,
-      notes: [],
-    });
-    expect(seen.length).toBe(callsAfterFirst);
-    expect(
-      store.getStaleAsrVideos("UCchan1", SEARCH_NOW).map((v) => v.video_id),
-    ).toEqual(["v1"]);
-  });
-
-  it("never re-downloads a video refreshed in the last 24 hours", async () => {
-    const { app, store, seen } = setup(
-      { srt: { status: 200, body: REFRESH_SRT } },
-      { now: SEARCH_NOW },
-    );
-    saveListedChannel(store);
-    seedStaleAsr(store, "v1", "2026-09-10T00:00:00Z");
-    // Two hours ago: outside the hourly gate, inside the 24-hour rule.
-    store.recordRefreshes(
-      "UCchan1",
-      ["v1"],
-      new Date(SEARCH_NOW.getTime() - 2 * 60 * 60 * 1000),
-    );
-    const res = await postSearch(app, {
-      channelId: "UCchan1",
-      quote: SEARCH_QUOTE,
-    });
-    expect((await res.json()) as unknown).toMatchObject({
-      found: false,
-      refreshed: [],
-    });
-    expect(seen).toEqual([]);
-  });
-
-  it("does not retry a video with no usable caption track within 24 hours", async () => {
-    const { app, store, seen } = setup(
-      { tracks: { status: 200, body: { items: [] } } },
-      { now: SEARCH_NOW },
-    );
-    saveListedChannel(store);
-    seedStaleAsr(store, "v1", "2026-09-10T00:00:00Z");
-    const first = await postSearch(app, {
-      channelId: "UCchan1",
-      quote: SEARCH_QUOTE,
-    });
-    expect((await first.json()) as unknown).toMatchObject({
-      found: false,
-      refreshed: [],
-    });
-    // One listing call on the viewer budget, nothing else anywhere.
-    expect(store.getSpent("2026-10-30", "viewer")).toBe(50);
-    expect(store.getSpent("2026-10-30", "creator")).toBe(0);
-    expect(
-      store.recentlyRefreshedVideoIds(
-        "UCchan1",
-        new Date(SEARCH_NOW.getTime() - 24 * 60 * 60 * 1000),
-      ),
-    ).toEqual(["v1"]);
-    const callsAfterFirst = seen.length;
-    const second = await postSearch(app, {
-      channelId: "UCchan1",
-      quote: "zebra elephant giraffe",
-    });
-    expect((await second.json()) as unknown).toMatchObject({
-      found: false,
-      refreshed: [],
-    });
-    expect(seen.length).toBe(callsAfterFirst);
-    expect(store.getSpent("2026-10-30", "viewer")).toBe(50);
-  });
-
-  it("records a refresh that fails with an API error the same way", async () => {
-    const { app, store, seen } = setup(
-      { tracks: { status: 500, body: {} } },
-      { now: SEARCH_NOW },
-    );
-    saveListedChannel(store);
-    seedStaleAsr(store, "v1", "2026-09-10T00:00:00Z");
-    const first = await postSearch(app, {
-      channelId: "UCchan1",
-      quote: SEARCH_QUOTE,
-    });
-    expect((await first.json()) as unknown).toMatchObject({
-      found: false,
-      refreshed: [],
-    });
-    expect(store.getSpent("2026-10-30", "viewer")).toBe(50);
-    expect(
-      store.recentlyRefreshedVideoIds(
-        "UCchan1",
-        new Date(SEARCH_NOW.getTime() - 24 * 60 * 60 * 1000),
-      ),
-    ).toEqual(["v1"]);
-    const callsAfterFirst = seen.length;
-    const second = await postSearch(app, {
-      channelId: "UCchan1",
-      quote: "zebra elephant giraffe",
-    });
-    expect((await second.json()) as unknown).toMatchObject({
-      found: false,
-      refreshed: [],
-    });
-    expect(seen.length).toBe(callsAfterFirst);
-    expect(store.getSpent("2026-10-30", "viewer")).toBe(50);
-  });
-
-  it("rate-limits archive search per client", async () => {
-    const { app, store } = setup({}, { now: SEARCH_NOW });
-    saveListedChannel(store);
-    saveFreshVideo(store, {
-      videoId: "garden",
-      title: "Garden walk",
-      cues: GARDEN_CUES,
-    });
-    for (let i = 0; i < 5; i += 1) {
-      const res = await postSearch(app, {
-        channelId: "UCchan1",
-        quote: "zebra elephant giraffe",
-      });
-      expect(res.status).toBe(200);
-    }
-    const limited = await postSearch(app, {
-      channelId: "UCchan1",
-      quote: "zebra elephant giraffe",
-    });
-    expect(limited.status).toBe(429);
-    expect(await limited.json()).toEqual({
-      message: "too many archive searches — try again in a minute",
-    });
-    expect(limited.headers.get("Retry-After")).toMatch(/^\d+$/);
-  });
-
-  it("never lets a spent viewer budget block creator indexing", async () => {
-    const { app, store } = setup();
-    saveConnectedChannel(store);
-    expect(store.trySpend(todayKey(), 1000, "viewer")).toBe(true);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string) => {
-        const parsed = new URL(url);
-        if (parsed.pathname === "/youtube/v3/videos") {
-          return jsonResponse({
-            items: [
-              {
-                id: "vid1",
-                snippet: {
-                  title: "Vid one",
-                  description: "",
-                  publishedAt: "2026-10-01T00:00:00Z",
-                  channelTitle: "Test Channel",
-                },
-              },
-            ],
-          });
-        }
-        throw new Error(`unexpected fetch: ${url}`);
-      }),
-    );
-    const res = await app.request("/api/archive/index", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Cookie: sessionCookie("UCchan1"),
-      },
-      body: JSON.stringify({ channelId: "UCchan1", videoIds: ["vid1"] }),
-    });
-    expect(res.status).toBe(200);
-    const events = parseSseEvents(await res.text());
-    const kinds = events.map((event) => event.event);
-    expect(kinds[kinds.length - 1]).toBe("result");
-    const result = JSON.parse(events[events.length - 1]?.data ?? "{}") as {
-      indexed: unknown[];
-      paused: boolean;
-    };
-    expect(result.paused).toBe(false);
-    expect(result.indexed).toHaveLength(1);
-    expect(store.getSpent(todayKey(), "creator")).toBe(250);
-    expect(store.getSpent(todayKey(), "viewer")).toBe(1000);
-  });
-});
-
-describe("GET /creators", () => {
-  it("lists listed creators with fresh counts", async () => {
-    const { app, store } = setup({}, { now: SEARCH_NOW });
-    saveListedChannel(store);
-    saveFreshVideo(store);
     store.saveCreator({
       channelId: "UCchan2",
-      channelTitle: "Private",
-      tokenEnc: encryptToken("rt", TEST_KEY),
+      channelTitle: "Other",
+      tokenEnc: encryptToken("rt2", TEST_KEY),
     });
     store.saveVideoWithCues({
       channelId: "UCchan2",
@@ -1642,7 +1026,9 @@ describe("GET /creators", () => {
       fetchedAt: "2026-10-29T00:00:00Z",
       cues: [{ idx: 1, startSeconds: 1, endSeconds: 2, text: "hi" }],
     });
-    const res = await app.request("/api/archive/creators");
+    const res = await app.request("/api/archive/creators", {
+      headers: { Cookie: sessionCookie("UCchan1") },
+    });
     expect(res.status).toBe(200);
     expect((await res.json()) as unknown).toEqual({
       creators: [
@@ -1654,58 +1040,13 @@ describe("GET /creators", () => {
       ],
     });
   });
-});
 
-describe("POST /listed", () => {
-  it("flips the listing choice", async () => {
+  it("requires a session (401)", async () => {
     const { app, store } = setup();
     saveConnectedChannel(store);
-    const post = (body: unknown) =>
-      app.request("/api/archive/listed", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: sessionCookie("UCchan1"),
-        },
-        body: JSON.stringify(body),
-      });
-    const on = await post({ channelId: "UCchan1", listed: true });
-    expect(on.status).toBe(200);
-    expect((await on.json()) as unknown).toEqual({ ok: true, listed: true });
-    expect(store.getCreator("UCchan1")).toMatchObject({ listed: 1 });
-    const off = await post({ channelId: "UCchan1", listed: false });
-    expect((await off.json()) as unknown).toEqual({ ok: true, listed: false });
-    expect(store.getCreator("UCchan1")).toMatchObject({ listed: 0 });
-  });
-
-  it("returns 404 for a channel that is not connected", async () => {
-    const { app } = setup();
-    const res = await app.request("/api/archive/listed", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Cookie: sessionCookie("UCmissing"),
-      },
-      body: JSON.stringify({ channelId: "UCmissing", listed: true }),
-    });
-    expect(res.status).toBe(404);
-  });
-
-  it("rejects invalid bodies with a 400", async () => {
-    const { app } = setup();
-    const post = (body: unknown) =>
-      app.request("/api/archive/listed", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body:
-          typeof body === "string" ? body : JSON.stringify(body),
-      });
-    expect((await post("not json{")).status).toBe(400);
-    expect((await post({})).status).toBe(400);
-    expect((await post({ channelId: "UCchan1" })).status).toBe(400);
-    expect(
-      (await post({ channelId: "UCchan1", listed: "yes" })).status,
-    ).toBe(400);
+    const res = await app.request("/api/archive/creators");
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ message: "creator sign-in required" });
   });
 });
 
@@ -1766,16 +1107,6 @@ describe("channel sessions", () => {
           cookie,
         ),
     },
-    {
-      name: "POST /listed",
-      call: (app, cookie) =>
-        postAuthed(
-          app,
-          "/api/archive/listed",
-          { channelId: "UCchan1", listed: true },
-          cookie,
-        ),
-    },
   ];
 
   it.each(matrix)("$name requires a session (401)", async ({ call }) => {
@@ -1798,6 +1129,34 @@ describe("channel sessions", () => {
       });
     },
   );
+
+  it("refuses a request for another channel's archive (403)", async () => {
+    const { app, store } = setup();
+    saveConnectedChannel(store);
+    store.saveCreator({
+      channelId: "UCchan2",
+      channelTitle: "Other",
+      tokenEnc: encryptToken("rt2", TEST_KEY),
+    });
+    store.saveVideoWithCues({
+      channelId: "UCchan2",
+      videoId: "v2",
+      title: "Other upload",
+      publishedAt: "",
+      trackKind: "standard",
+      fetchedAt: new Date().toISOString(),
+      cues: [{ idx: 1, startSeconds: 1, endSeconds: 2, text: "secret line" }],
+    });
+    const res = await getAuthed(
+      app,
+      "/api/archive/videos?channelId=UCchan2",
+      sessionCookie("UCchan1"),
+    );
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      message: "session does not include this channel",
+    });
+  });
 
   it("rejects an expired session", async () => {
     const { app, store } = setup();

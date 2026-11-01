@@ -1,9 +1,4 @@
 import type { LocateResult, ProgressUpdate } from "../hooks/useQuoteStream";
-import {
-  ArchiveResultCard,
-  RefreshNotes,
-  type ArchiveSearchResult,
-} from "./ArchiveResultCard";
 import { CandidateList } from "./CandidateList";
 import type { SearchInput } from "./Composer";
 import { Progress } from "./Progress";
@@ -16,7 +11,6 @@ export interface TurnState {
   status: "streaming" | "done" | "error";
   progress: ProgressUpdate[];
   result: LocateResult | null;
-  archiveResult: ArchiveSearchResult | null;
   error: string | null;
 }
 
@@ -27,13 +21,10 @@ interface TurnProps {
 }
 
 export function Turn({ turn, running, onRetry }: TurnProps) {
-  const archiveMode = turn.input.channelId !== "";
   return (
     <li className="scroll-mt-6 rounded-xl border border-border bg-card p-5">
       <p className="font-mono text-sm text-muted">
-        {archiveMode
-          ? `${turn.input.channelTitle || "Creator"} · archive · ${turn.timeWindow}`
-          : `${turn.input.creator || "Any creator"} · ${turn.timeWindow}`}
+        {`${turn.input.creator || "Any creator"} · ${turn.timeWindow}`}
       </p>
       <p className="mt-2 font-display text-xl">
         &ldquo;{turn.input.quote}&rdquo;
@@ -61,7 +52,7 @@ export function Turn({ turn, running, onRetry }: TurnProps) {
         </div>
       )}
 
-      {turn.status === "done" && turn.result && !archiveMode && (
+      {turn.status === "done" && turn.result && (
         <>
           {turn.result.found ? (
             <ResultCard result={turn.result} timeWindow={turn.timeWindow} />
@@ -72,36 +63,6 @@ export function Turn({ turn, running, onRetry }: TurnProps) {
               publishedAt={turn.result.publishedAt}
               timeWindow={turn.timeWindow}
             />
-          )}
-        </>
-      )}
-
-      {turn.status === "done" && turn.archiveResult && archiveMode && (
-        <>
-          {turn.archiveResult.found ? (
-            <ArchiveResultCard
-              result={turn.archiveResult}
-              timeWindow={turn.timeWindow}
-            />
-          ) : (
-            <div className="mt-4 border-t border-border pt-4">
-              <h3 className="font-display text-lg font-bold">
-                No matching line in this archive
-              </h3>
-              <p className="mt-1 text-muted">
-                Nothing in {turn.input.channelTitle || "this archive"} matches
-                that wording closely enough.
-              </p>
-              <RefreshNotes result={turn.archiveResult} />
-              <button
-                type="button"
-                onClick={() => onRetry(turn.input)}
-                disabled={running}
-                className="mt-3 rounded-lg border border-border px-4 py-2 font-medium text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Try again
-              </button>
-            </div>
           )}
         </>
       )}

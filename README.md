@@ -17,10 +17,10 @@ audio. It uses only official APIs (YouTube Data API v3), oEmbed, the YouTube
 embedded player, and Meta's models. No transcript fetching, no scrapers, no
 downloads.
 
-Known risk (creator archive, spec §7.6): YouTube's policy text does not
-address showing caption text from an authorized channel to other viewers.
-Captions are only read from channels whose creator connected and listed their
-archive, and only the matched lines are shown in results.
+Known risk (creator archive, spec §13A): YouTube's policy text does not
+clearly cover showing caption text from an authorized channel to other people.
+Caption text is shown only to the signed-in creator who owns the channel, so
+this version does not depend on that answer.
 
 ## Models and tools
 
@@ -58,9 +58,9 @@ archive, and only the matched lines are shown in results.
 - A4: caption-window matching — 3-to-6-cue windows scored with the shared
   fuzzy overlap, ASR confidence cap, archive search endpoint with on-miss
   ASR refresh, listed-creators scope, and the verified-timestamp result.
-- A5: viewer archive UI — creator picker on the search page, archive
-  result card (verified-timestamp embed, track label, matched caption
-  text), and miss/retry states.
+- A5 (removed): viewer archive UI — creator picker on the search page,
+  archive result card there, and miss/retry states. Removed when the archive
+  went creator-only; caption text is shown only to the signed-in creator.
 
 ## External services and libraries
 

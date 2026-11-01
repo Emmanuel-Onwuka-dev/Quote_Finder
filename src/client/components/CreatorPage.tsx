@@ -9,7 +9,6 @@ interface ArchiveCreator {
   channelId: string;
   channelTitle: string;
   videoCount: number;
-  listed: boolean;
 }
 
 interface ArchiveStatus {
@@ -104,23 +103,6 @@ export function CreatorPage() {
     }
   };
 
-  const toggleListed = async (channelId: string, listed: boolean) => {
-    setNotice(null);
-    try {
-      const res = await fetch("/api/archive/listed", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channelId, listed }),
-      });
-      if (!res.ok) {
-        throw new Error(`status ${res.status}`);
-      }
-      await load();
-    } catch {
-      setLoadError("Could not update the listing. Please try again.");
-    }
-  };
-
   const creators = status?.creators ?? null;
 
   return (
@@ -134,8 +116,8 @@ export function CreatorPage() {
             </h1>
           </div>
           <p className="mt-3 text-lg text-muted">
-            Connect your YouTube channel so viewers can search your archive
-            for a line they remember.
+            Connect your YouTube channel to keep a private archive of your
+            own captions. Only you can see them.
           </p>
           <p className="mt-2">
             <a href="/" className="text-accent underline">
@@ -174,8 +156,7 @@ export function CreatorPage() {
             <div>
               <p>
                 Quotefinder will ask Google for permission to read your own
-                channel&apos;s captions. Nothing is listed for viewers until
-                you turn that on.
+                channel&apos;s captions. They stay private to you.
               </p>
               <a
                 href="/api/archive/oauth/start"
@@ -197,17 +178,6 @@ export function CreatorPage() {
                 <p className="mt-1 font-mono text-sm text-muted">
                   Indexed videos: {creator.videoCount}
                 </p>
-                <label className="mt-2 flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={creator.listed}
-                    onChange={(event) =>
-                      void toggleListed(creator.channelId, event.target.checked)
-                    }
-                    disabled={leaving}
-                  />
-                  <span>List my archive in viewer search</span>
-                </label>
                 <CreatorIndexing
                   channelId={creator.channelId}
                   onDone={load}

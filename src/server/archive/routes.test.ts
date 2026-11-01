@@ -1050,6 +1050,148 @@ describe("GET /creators", () => {
   });
 });
 
+describe("POST /search", () => {
+  const searchCues = [
+    {
+      idx: 1,
+      startSeconds: 0,
+      endSeconds: 2,
+      text: "welcome back to the workshop",
+    },
+    {
+      idx: 2,
+      startSeconds: 5,
+      endSeconds: 7,
+      text: "today we rebuild the carburetor",
+    },
+    {
+      idx: 3,
+      startSeconds: 9,
+      endSeconds: 11,
+      text: "from absolute scratch together",
+    },
+  ];
+  const searchQuery = "rebuild the carburetor from absolute scratch";
+
+  function saveSearchVideo(
+    store: ArchiveStore,
+    channelId = "UCchan1",
+    videoId = "vid1",
+  ): void {
+    store.saveVideoWithCues({
+      channelId,
+      videoId,
+      title: "Workshop rebuild",
+      publishedAt: "2026-10-29T00:00:00Z",
+      trackKind: "standard",
+      fetchedAt: new Date().toISOString(),
+      cues: searchCues,
+    });
+  }
+
+  async function postSearch(
+    app: Hono,
+    body: unknown,
+    cookie?: string,
+  ): Promise<Response> {
+    return app.request("/api/archive/search", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(cookie ? { Cookie: cookie } : {}),
+      },
+      body: typeof body === "string" ? body : JSON.stringify(body),
+    });
+  }
+
+  it("returns the channel's own matches", async () => {
+    const { app, store } = setup();
+    saveConnectedChannel(store);
+    saveSearchVideo(store);
+    store.saveCreator({
+      channelId: "UCchan2",
+      channelTitle: "Other",
+      tokenEnc: encryptToken("rt2", TEST_KEY),
+    });
+    saveSearchVideo(store, "UCchan2", "v2");
+    const res = await postSearch(
+      app,
+      { channelId: "UCchan1", query: searchQuery },
+      sessionCookie("UCchan1"),
+    );
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as {
+      matches: Array<Record<string, unknown>>;
+    };
+    expect(data.matches).toHaveLength(1);
+    expect(data.matches[0]).toMatchObject({
+      videoTitle: "Workshop rebuild",
+      creator: "Test Channel",
+      startSeconds: 5,
+      timestampVerified: true,
+      trackKind: "standard",
+      confidence: "high",
+    });
+    expect(String(data.matches[0]?.text)).toContain("carburetor");
+    expect(String(data.matches[0]?.videoUrl)).toContain("v=vid1");
+    expect(String(data.matches[0]?.videoUrl)).toContain("t=5s");
+  });
+
+  it("rejects a session for another channel (403)", async () => {
+    const { app, store } = setup();
+    saveConnectedChannel(store);
+    saveSearchVideo(store);
+    const res = await postSearch(
+      app,
+      { channelId: "UCchan1", query: searchQuery },
+      sessionCookie("UCother"),
+    );
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      message: "session does not include this channel",
+    });
+  });
+
+  it("requires a session (401)", async () => {
+    const { app, store } = setup();
+    saveConnectedChannel(store);
+    saveSearchVideo(store);
+    const res = await postSearch(app, {
+      channelId: "UCchan1",
+      query: searchQuery,
+    });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ message: "creator sign-in required" });
+  });
+
+  it("returns an empty result for a channel with no indexed videos", async () => {
+    const { app, store } = setup();
+    saveConnectedChannel(store);
+    const res = await postSearch(
+      app,
+      { channelId: "UCchan1", query: searchQuery },
+      sessionCookie("UCchan1"),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ matches: [] });
+  });
+
+  it("rejects invalid bodies with a 400", async () => {
+    const { app, store } = setup();
+    saveConnectedChannel(store);
+    const cookie = sessionCookie("UCchan1");
+    expect((await postSearch(app, "not json{", cookie)).status).toBe(400);
+    expect((await postSearch(app, {}, cookie)).status).toBe(400);
+    expect(
+      (await postSearch(app, { channelId: "UCchan1" }, cookie)).status,
+    ).toBe(400);
+    expect(
+      (await postSearch(app, { channelId: "UCchan1", query: "  " }, cookie))
+        .status,
+    ).toBe(400);
+  });
+});
+
 describe("channel sessions", () => {
   const postAuthed = async (
     app: Hono,

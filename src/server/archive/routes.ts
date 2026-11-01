@@ -1,7 +1,8 @@
 // Creator archive HTTP routes (§4.1–§4.4): OAuth connect, status, upload
-// listing, caption indexing, and disconnect. Mounted at /api/archive.
-// Secrets never leave the server: the browser sees channel titles and
-// counts only.
+// listing, caption indexing, creator-only caption search, and disconnect.
+// Mounted at /api/archive. Secrets never leave the server: the browser
+// sees channel titles and counts — plus, on the /creator page only, the
+// signed-in creator's own matched caption text.
 
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
@@ -10,6 +11,7 @@ import { listUploadsPage, resolveChannel, videosById } from "../youtube";
 import { SSE_HEADERS, formatSseEvent } from "../quote-stream";
 import { decryptToken, encryptToken } from "./crypto";
 import { INDEX_PAUSED_MESSAGE, runIndexing } from "./indexing";
+import { matchVideo, type ArchiveVideoCues } from "./match";
 import {
   SESSION_COOKIE,
   SESSION_TTL_MS,
@@ -32,6 +34,7 @@ import {
   todayKey,
   videoFreshness,
   type ArchiveStore,
+  type MatchableVideo,
 } from "./store";
 
 export interface ArchiveDeps {
@@ -77,6 +80,11 @@ const DisconnectSchema = z.object({ channelId: z.string().min(1) });
 const IndexSchema = z.object({
   channelId: z.string().min(1),
   videoIds: z.array(z.string().min(1)).min(1).max(200),
+});
+
+const SearchSchema = z.object({
+  channelId: z.string().min(1),
+  query: z.string().trim().min(1),
 });
 
 export function createArchiveRoutes(deps: ArchiveDeps) {
@@ -451,6 +459,61 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
       },
     });
     return new Response(stream, { headers: SSE_HEADERS });
+  });
+
+  // Creator-only caption search (§13A): the signed-in creator searches
+  // their own channel's indexed cues. No session → 401; a session for
+  // another channel → 403; matches never leave the channel.
+  app.post("/search", async (c) => {
+    let raw: unknown;
+    try {
+      raw = await c.req.json();
+    } catch {
+      return c.json({ message: "request body must be JSON" }, 400);
+    }
+    const parsed = SearchSchema.safeParse(raw);
+    if (!parsed.success) {
+      return c.json(
+        { message: "channelId and a non-empty query are required" },
+        400,
+      );
+    }
+    const { channelId, query } = parsed.data;
+    const denied = requireChannel(getCookie(c, SESSION_COOKIE), channelId);
+    if (denied) {
+      return c.json({ message: denied.message }, denied.status);
+    }
+    const creator = store.getCreator(channelId);
+    if (!creator) {
+      return c.json({ message: "channel is not connected" }, 404);
+    }
+    const now = deps.now ?? new Date();
+    const toCandidates = (videos: MatchableVideo[]): ArchiveVideoCues[] =>
+      videos.map((video) => ({
+        videoId: video.video_id,
+        title: video.title,
+        publishedAt: video.published_at,
+        channelTitle: creator.channel_title,
+        trackKind: video.track_kind,
+        cues: video.cues,
+      }));
+    const matches = toCandidates(store.getMatchableVideos(channelId, now))
+      .map((video) => matchVideo(video, query))
+      .filter((match) => match !== null)
+      .sort((a, b) => b.score - a.score)
+      .map((match) => ({
+        videoTitle: match.title,
+        videoUrl: match.url,
+        publishedAt: match.publishedAt,
+        creator: match.creator,
+        startSeconds: match.startSeconds,
+        timestampVerified: true,
+        trackKind: match.trackKind,
+        trackLabel: match.trackLabel,
+        confidence: match.confidence,
+        text: match.text,
+      }));
+    return c.json({ matches });
   });
 
   app.post("/disconnect", async (c) => {

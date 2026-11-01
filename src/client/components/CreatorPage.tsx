@@ -2,6 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProgressUpdate } from "../hooks/useQuoteStream";
 import { formatDate } from "../lib/format";
 import { createSseParser } from "../lib/sse";
+import {
+  ArchiveResultCard,
+  type CreatorArchiveMatch,
+} from "./ArchiveResultCard";
 import { LogoMark } from "./Brand";
 import { Progress } from "./Progress";
 
@@ -182,6 +186,10 @@ export function CreatorPage() {
                   channelId={creator.channelId}
                   onDone={load}
                 />
+                <CreatorSearch
+                  channelId={creator.channelId}
+                  channelTitle={creator.channelTitle}
+                />
                 <button
                   type="button"
                   onClick={() =>
@@ -196,6 +204,104 @@ export function CreatorPage() {
             ))}
         </main>
       </div>
+    </div>
+  );
+}
+
+function CreatorSearch({
+  channelId,
+  channelTitle,
+}: {
+  channelId: string;
+  channelTitle: string;
+}) {
+  const [query, setQuery] = useState("");
+  const [matches, setMatches] = useState<CreatorArchiveMatch[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
+  const runSearch = async () => {
+    const trimmed = query.trim();
+    if (trimmed === "" || searching) {
+      return;
+    }
+    setSearching(true);
+    setSearchError(null);
+    try {
+      const res = await fetch("/api/archive/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channelId, query: trimmed }),
+      });
+      if (!res.ok) {
+        let message = `Search failed (${res.status})`;
+        try {
+          const data = (await res.json()) as { message?: string };
+          if (data.message) {
+            message = data.message;
+          }
+        } catch {
+          // Keep the status fallback.
+        }
+        throw new Error(message);
+      }
+      const data = (await res.json()) as {
+        matches?: CreatorArchiveMatch[];
+      };
+      setMatches(data.matches ?? []);
+    } catch (error) {
+      setMatches(null);
+      setSearchError(
+        error instanceof Error ? error.message : "Search failed.",
+      );
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 border-t border-border pt-3">
+      <h3 className="font-display text-lg font-bold">Search your captions</h3>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void runSearch();
+        }}
+        className="mt-2 flex gap-2"
+      >
+        <input
+          type="text"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={`A line from ${channelTitle || "your channel"}`}
+          disabled={searching}
+          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-foreground placeholder:text-muted disabled:opacity-60"
+        />
+        <button
+          type="submit"
+          disabled={searching || query.trim() === ""}
+          className="shrink-0 rounded-lg bg-accent px-4 py-2 font-medium text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {searching ? "Searching…" : "Search"}
+        </button>
+      </form>
+      {searchError && (
+        <p role="alert" className="mt-2 text-destructive">
+          {searchError}
+        </p>
+      )}
+      {matches !== null && matches.length === 0 && !searchError && (
+        <p className="mt-3 text-muted">No matching line in your archive.</p>
+      )}
+      {matches !== null && matches.length > 0 && (
+        <ol>
+          {matches.map((match) => (
+            <li key={`${match.videoUrl}-${match.startSeconds}`}>
+              <ArchiveResultCard result={match} />
+            </li>
+          ))}
+        </ol>
+      )}
     </div>
   );
 }

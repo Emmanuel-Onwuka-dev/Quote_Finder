@@ -52,6 +52,8 @@ export interface ArchiveStore {
   deleteChannel(channelId: string): void;
   getSpent(day: string, kind?: BudgetKind): number;
   trySpend(day: string, units: number, kind?: BudgetKind): boolean;
+  /** Daily cap for a budget kind (honors the open-time override). */
+  budgetCapFor(kind: BudgetKind): number;
   saveVideoWithCues(args: {
     channelId: string;
     videoId: string;
@@ -90,14 +92,9 @@ export const VIEWER_BUDGET_UNITS = 1000;
 /** Daily main-search budget: 3,000 units of YouTube API quota. */
 export const SEARCH_BUDGET_UNITS = 3000;
 
-function budgetCap(kind: BudgetKind): number {
-  if (kind === "viewer") {
-    return VIEWER_BUDGET_UNITS;
-  }
-  if (kind === "search") {
-    return SEARCH_BUDGET_UNITS;
-  }
-  return DAILY_BUDGET_UNITS;
+export interface ArchiveStoreOptions {
+  /** Override for the daily main-search cap (dev/testing). */
+  searchBudgetUnits?: number;
 }
 
 /** §4.3 caption retention: cue text is purged after 30 days. */
@@ -173,9 +170,22 @@ CREATE INDEX IF NOT EXISTS idx_cues_video_idx ON cues(video_id, idx);
 CREATE INDEX IF NOT EXISTS idx_cues_text ON cues(text);
 `;
 
-export function openArchiveStore(path: string): ArchiveStore {
+export function openArchiveStore(
+  path: string,
+  options: ArchiveStoreOptions = {},
+): ArchiveStore {
   const db = new Database(path);
   db.exec(SCHEMA);
+  const searchBudgetCap = options.searchBudgetUnits ?? SEARCH_BUDGET_UNITS;
+  function budgetCap(kind: BudgetKind): number {
+    if (kind === "viewer") {
+      return VIEWER_BUDGET_UNITS;
+    }
+    if (kind === "search") {
+      return searchBudgetCap;
+    }
+    return DAILY_BUDGET_UNITS;
+  }
   // One-time upgrade: pre-A7 budget rows (day only) become creator rows.
   const budgetColumns = db
     .prepare("PRAGMA table_info(budget)")
@@ -373,6 +383,9 @@ export function openArchiveStore(path: string): ArchiveStore {
     },
     trySpend(day, units, kind: BudgetKind = "creator") {
       return trySpendTx(day, units, kind);
+    },
+    budgetCapFor(kind) {
+      return budgetCap(kind);
     },
     lastChannelRefreshAt(channelId) {
       const row = lastRefreshStmt.get(channelId) as { at: string | null };

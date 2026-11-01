@@ -5,6 +5,7 @@ import { existsSync } from "node:fs";
 import { createArchiveRoutes } from "./archive/routes";
 import { openArchiveStore } from "./archive/store";
 import { loadConfig } from "./config";
+import { createQuoteCardHandler } from "./quote-card";
 import { createQuoteStreamHandler } from "./quote-stream";
 import { createTranscribeHandler } from "./transcribe";
 
@@ -15,7 +16,9 @@ app.get("/api/health", (c) => c.json({ ok: true, service: "quotefinder" }));
 const archiveConfig = loadConfig();
 // One store handle shared by the archive routes and the main-search quota,
 // so all budgets live in the same database.
-const archiveStore = openArchiveStore(archiveConfig.archiveDbPath);
+const archiveStore = openArchiveStore(archiveConfig.archiveDbPath, {
+  searchBudgetUnits: archiveConfig.searchBudgetUnits,
+});
 
 app.post("/api/quote-stream", createQuoteStreamHandler({ archiveStore }));
 
@@ -25,6 +28,15 @@ app.post(
     modelApiKey: archiveConfig.modelApiKey,
     metaBaseUrl: archiveConfig.metaBaseUrl,
     transcriptionModel: archiveConfig.transcriptionModel,
+  }),
+);
+
+app.post(
+  "/api/quote-card",
+  createQuoteCardHandler({
+    modelApiKey: archiveConfig.modelApiKey,
+    metaBaseUrl: archiveConfig.metaBaseUrl,
+    imageModel: archiveConfig.imageModel,
   }),
 );
 

@@ -351,6 +351,36 @@ describe("search quota", () => {
     }
   });
 
+  it("searches past the default cap when the store raises it", async () => {
+    const store = openArchiveStore(":memory:", { searchBudgetUnits: 10000 });
+    try {
+      expect(store.trySpend(todayKey(), 3000, "search")).toBe(true);
+      const { app, seen } = quotaApp(
+        [chatBody(VARIANTS_REPLY), chatBody(RANK_VID1_REPLY)],
+        store,
+      );
+      const res = await postQuote(app, {
+        quote: "quantum bicycle",
+        creator: "@tester",
+        scene: "",
+        sinceDays: 0,
+      });
+      expect(res.status).toBe(200);
+      const events = parseSse(await res.text());
+      const results = events.filter((entry) => entry.event === "result");
+      expect(results).toHaveLength(1);
+      const notes = (results[0]?.data as { notes: string[] }).notes;
+      expect(notes).not.toContain(
+        "search quota spent for today — answering from memory",
+      );
+      expect(seen.some((href) => href.includes("www.googleapis.com"))).toBe(
+        true,
+      );
+    } finally {
+      store.close();
+    }
+  });
+
   it("streams a quota error when Meta is also unavailable", async () => {
     const store = openArchiveStore(":memory:");
     try {

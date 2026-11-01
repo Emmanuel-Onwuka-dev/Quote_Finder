@@ -4,7 +4,7 @@
 
 import type { Context } from "hono";
 import { z } from "zod";
-import { SEARCH_BUDGET_UNITS, todayKey } from "./archive/store";
+import { todayKey } from "./archive/store";
 import { locateQuote, type LocateDeps, type LocateInput } from "./quote-finder";
 
 export const QuoteStreamBodySchema = z.object({
@@ -88,7 +88,7 @@ export function createQuoteStreamHandler(deps: LocateDeps = {}) {
       : undefined;
     const quotaSpent = searchQuota
       ? searchQuota.store.getSpent(searchQuota.day, "search") >=
-        SEARCH_BUDGET_UNITS
+        searchQuota.store.budgetCapFor("search")
       : false;
     return new Response(
       quoteStream(parsed.data, {

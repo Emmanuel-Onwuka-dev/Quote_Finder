@@ -7,6 +7,73 @@ interface ResultCardProps {
   timeWindow: string;
 }
 
+/** Shareable quote card (§7.7): fetched lazily after the result
+ * renders, hidden entirely when the call fails. */
+function QuoteCard({ sentence }: { sentence: string }) {
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setImageUrl(null);
+    fetch("/api/quote-card", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sentence }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(`status ${res.status}`);
+        }
+        const data = (await res.json()) as { imageUrl?: string };
+        if (typeof data.imageUrl !== "string" || !data.imageUrl) {
+          throw new Error("no image in response");
+        }
+        return data.imageUrl;
+      })
+      .then((url) => {
+        if (!cancelled) {
+          setImageUrl(url);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sentence]);
+
+  if (!loading && !imageUrl) {
+    return null;
+  }
+  return (
+    <div className="mt-4">
+      {loading && !imageUrl && (
+        <p className="text-sm text-muted">Making your share card…</p>
+      )}
+      {imageUrl && (
+        <>
+          <img
+            src={imageUrl}
+            alt={`Share card: ${sentence}`}
+            loading="lazy"
+            className="w-full rounded-xl border border-border"
+          />
+          <p className="text-sm text-muted">
+            AI-generated share card. The text may differ slightly from the
+            original.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function ResultCard({ result, timeWindow }: ResultCardProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [copied, setCopied] = useState(false);
@@ -88,6 +155,7 @@ export function ResultCard({ result, timeWindow }: ResultCardProps) {
       >
         {copied ? "Copied" : "Copy link"}
       </button>
+      {result.fullSentence && <QuoteCard sentence={result.fullSentence} />}
     </div>
   );
 }

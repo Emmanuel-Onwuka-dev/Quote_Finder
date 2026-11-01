@@ -71,6 +71,9 @@ this version does not depend on that answer.
   from `OPEN_MODEL_URL` appended to the Spark variants, never fatal.
   Off on the hosted version: it needs a local Glimmer server reachable
   at OPEN_MODEL_URL.
+- P5: Image quote cards — `POST /api/quote-card` renders a shareable
+  card for each found result, shown in the result card, hidden on
+  failure.
 
 ## External services and libraries
 
@@ -92,3 +95,10 @@ npm test
 
 Keys go in `.env` on your machine or the platform secret store — never in chat,
 source files, or the browser.
+
+Heavy testing day? Raise the daily search quota for the server session
+(default 3000 units, resets at UTC midnight):
+
+```powershell
+$env:SEARCH_BUDGET_UNITS="10000"   # same terminal, before npm run dev:server
+```

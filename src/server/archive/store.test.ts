@@ -208,6 +208,28 @@ describe("daily budget", () => {
       store.close();
     }
   });
+
+  it("honors a search cap override and reports caps", () => {
+    const store = openArchiveStore(":memory:", { searchBudgetUnits: 100 });
+    try {
+      expect(store.budgetCapFor("search")).toBe(100);
+      expect(store.budgetCapFor("creator")).toBe(5000);
+      expect(store.budgetCapFor("viewer")).toBe(1000);
+      expect(store.trySpend("2026-10-30", 100, "search")).toBe(true);
+      expect(store.trySpend("2026-10-30", 1, "search")).toBe(false);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("defaults the search cap to 3000", () => {
+    const store = openMemory();
+    try {
+      expect(store.budgetCapFor("search")).toBe(3000);
+    } finally {
+      store.close();
+    }
+  });
 });
 
 describe("viewer refresh tracking", () => {

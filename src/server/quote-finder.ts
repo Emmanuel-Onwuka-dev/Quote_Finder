@@ -411,6 +411,17 @@ const SEARCH_QUOTA_SPENT_NOTE =
   "search quota spent for today — answering from memory";
 const SEARCH_QUOTA_SPENT = "search quota spent for today";
 
+/** Candidate-count note with correct singular/plural (and no "only 0"). */
+export function trustedCandidatesNote(count: number): string {
+  if (count <= 0) {
+    return "no trusted candidates were available";
+  }
+  if (count === 1) {
+    return "only 1 trusted candidate was available";
+  }
+  return `only ${count} trusted candidates were available`;
+}
+
 function emptyEngine(): EngineOutput {
   return {
     shortlist: [],
@@ -675,9 +686,7 @@ export async function locateQuote(
       "the memory fallback was unavailable, so these candidates come only from title/description matching",
     ];
     if (candidates.length < CANDIDATE_TARGET) {
-      degradedNotes.push(
-        `only ${candidates.length} trusted candidates were available`,
-      );
+      degradedNotes.push(trustedCandidatesNote(candidates.length));
     }
     return {
       found: false,
@@ -737,7 +746,7 @@ export async function locateQuote(
     notes.push(fallback.notes);
   }
   if (candidates.length < CANDIDATE_TARGET) {
-    notes.push(`only ${candidates.length} trusted candidates were available`);
+    notes.push(trustedCandidatesNote(candidates.length));
   }
 
   if (fallback.found && fallback.videoUrl && mainAlive) {

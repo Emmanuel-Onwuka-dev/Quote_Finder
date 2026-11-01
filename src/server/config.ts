@@ -1,5 +1,7 @@
 // Server-only configuration. Browser code must never import this module.
 
+import { SEARCH_BUDGET_UNITS } from "./archive/store";
+
 export interface ServerConfig {
   modelApiKey: string;
   metaBaseUrl: string;
@@ -14,6 +16,15 @@ export interface ServerConfig {
   googleRedirectUri: string;
   archiveTokenKey: string;
   archiveDbPath: string;
+  searchBudgetUnits: number;
+}
+
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  if (value === undefined) {
+    return fallback;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
@@ -32,6 +43,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     googleRedirectUri: env.GOOGLE_REDIRECT_URI ?? "",
     archiveTokenKey: env.ARCHIVE_TOKEN_KEY ?? "",
     archiveDbPath: env.ARCHIVE_DB_PATH ?? "./archive.db",
+    searchBudgetUnits: parsePositiveInt(
+      env.SEARCH_BUDGET_UNITS,
+      SEARCH_BUDGET_UNITS,
+    ),
   };
 }
 

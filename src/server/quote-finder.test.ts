@@ -6,6 +6,7 @@ import {
   queryVariants,
   rankShortlist,
   stamp,
+  trustedCandidatesNote,
   urlExists,
   verifyUrls,
   windowLabel,
@@ -223,6 +224,20 @@ function contextWith(shortlistTitles: string[] = []): PromptContext {
     })),
   };
 }
+
+describe("trustedCandidatesNote", () => {
+  it("handles zero, one, and many", () => {
+    expect(trustedCandidatesNote(0)).toBe(
+      "no trusted candidates were available",
+    );
+    expect(trustedCandidatesNote(1)).toBe(
+      "only 1 trusted candidate was available",
+    );
+    expect(trustedCandidatesNote(4)).toBe(
+      "only 4 trusted candidates were available",
+    );
+  });
+});
 
 describe("stamp", () => {
   it("formats seconds as mm:ss", () => {

@@ -259,7 +259,7 @@ function catalogueBlock(shortlist: VideoMeta[]): string {
     const date = video.publishedAt.slice(0, 10) || "undated";
     return `${index + 1}. ${video.title} — ${date} — ${youtubeWatchUrl(video.id)}\n   ${description}`;
   });
-  return `Catalogue (real fetched videos — choose ONLY these URLs):\n${lines.join("\n")}`;
+  return `Videos checked today (real, fetched from YouTube — choose ONLY these URLs):\n${lines.join("\n")}`;
 }
 
 function contextBlock(context: PromptContext): string {
@@ -293,8 +293,8 @@ export interface RankPick {
 const RANK_SYSTEM = [
   "You help find a video from a half-remembered quote.",
   "The user is recalling from memory and will almost never have the exact wording.",
-  "Pick the best matches from the catalogue below and give a one-line reason for each.",
-  "Only catalogue URLs may be chosen.",
+  "Pick the best matches from the videos below and give a one-line reason for each.",
+  "Only the video URLs below may be chosen.",
   'Reply with ONLY a single JSON object like {"picks": [{"url": "...", "reason": "..."}]}, no other text.',
 ].join(" ");
 

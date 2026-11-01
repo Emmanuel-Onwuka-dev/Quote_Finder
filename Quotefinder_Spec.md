@@ -11,13 +11,15 @@ Use this document to build Quotefinder with any stack, tool, or AI coding assist
 - **Public repository.** The repo must be public. Never commit API keys. Commit only `.env.example`, never `.env`.
 - **Meta models used.** AI features must use Meta models through the Meta Model API: Muse Spark (`TEXT_MODEL`) for text, and Muse Voice Transcribe (`TRANSCRIPTION_MODEL`) for speech. Muse Image (section 7.7) and Muse Glimmer (section 7.7) are optional. Name Muse Code in the README as the coding agent used to build the project.
 - **Original contributions.** The README must list what was built during the hackathon, separately from external services and libraries.
-- **Platform policy.** The README must state that this version does not scrape any platform and does not download any video or audio. It uses only official APIs (YouTube Data API), oEmbed, the YouTube embedded player, and Meta's models. Do not add scraping, transcript fetching, or downloads without first checking the platform's terms.
+- **Platform policy.** The README must state that this version does not scrape any platform and does not download any video or audio. It uses only official APIs (YouTube Data API), oEmbed, the YouTube embedded player, and Meta's models. Do not add scraping, transcript fetching, or downloads without first checking the platform's terms. The creator archive is the only exception to the no-captions rule, and only under section 13A.
 
 ---
 
 ## 1. Product summary
 
 Quotefinder is a web app. A user types or speaks a line they remember from a video. They optionally name the creator, choose a time window, and optionally describe the scene. The app then:
+
+Quotefinder also has a creator archive (section 13A). A creator with a YouTube channel signs in with Google, connects their own channel, and searches the captions of their own uploads. Caption text is only ever shown to that creator.
 
 1. Searches the creator's real uploads (or the wider web, if no creator is given) using YouTube's official API.
 2. Matches the remembered line against each video's title and description.
@@ -31,7 +33,7 @@ If nothing matches confidently, the app still returns at least 10 real, verified
 
 - **Frontend:** any modern component-based UI library or plain JavaScript/TypeScript. The UI needs a streaming-capable HTTP client (`fetch` with a `ReadableStream` reader works).
 - **Backend:** any server runtime that can run HTTP endpoints, stream responses, and make outbound HTTP requests. The original used Node/Bun-style TypeScript with a Vite-based build, file-based routing under `src/routes`, and Tailwind CSS v4. None of this is required.
-- **Persistence:** none. No database and no user accounts. All state lives in the browser session.
+- **Persistence:** Quote search stores nothing and needs no account. The creator archive stores creator refresh tokens (encrypted) and caption text for connected creators in SQLite. See section 13A.
 - **Styling:** any CSS approach. Colors must be defined as semantic tokens (for example `--background`, `--foreground`, `--accent`, `--destructive`), not hardcoded in components.
 - **Type checking:** the project should type-check cleanly after every change, using whatever checker the stack provides.
 - **SEO:** every public page has its own title, description, and Open Graph and Twitter card tags. Use `og:type = website` and `twitter:card = summary_large_image`.
@@ -114,9 +116,9 @@ Create these modules. Names are suggestions; keep the separation of responsibili
 - Store for each video: `id`, `title`, `publishedAt`, `description`.
 - Keep the index in memory for the duration of one request. Do not persist it.
 
-### 5.3 Transcripts (removed)
+### 5.3 Transcripts
 
-This version does not fetch captions or transcripts. Do not call InnerTube, the timedtext endpoints, or any third-party transcript service. Matching uses only the title and description returned by the official API (section 5.5).
+Quote search does not fetch captions or transcripts. Matching uses only the title and description from the official API (section 5.5). The creator archive reads captions only from the signed-in creator's own uploads, through the official YouTube Data API captions endpoints (section 13A). Do not call InnerTube, the timedtext endpoints, or any third-party transcript service.
 
 ### 5.4 Search flow
 
@@ -440,9 +442,47 @@ In the browser, confirm:
 ## 13. Behavior to preserve
 
 - **YouTube** gets official-API search, title and description matching, and Muse Spark query variants and ranking. Timestamps are not verified in this version.
-- **No scraping, transcripts, or downloads.** Playback uses the official embedded player only.
+- **No scraping, transcripts, or downloads.** Playback uses the official embedded player only. The creator archive is the only exception to the no-captions rule, and only under section 13A.
 - **Instagram, TikTok, and Facebook are not supported** in this version.
 - Matching is loose on wording and strict on substance (the `keyCoverage` guard).
 - Time windows filter the YouTube engine and the AI prompt, and appear in every turn's header.
 - The app must always return at least 10 verified candidates when it is not confident.
 - Credentials are entered only through the platform's secret store, never in chat or source code.
+
+---
+
+## 13A. Creator archive
+
+**Who it is for.** A creator who owns a YouTube channel and wants to find a moment in their own uploads when they remember a line but not the video.
+
+**Who can use it.** Only a signed-in creator, for their own channel. No other viewer can search a creator's archive, and no public route returns caption text.
+
+**Sign-in.** Google OAuth 2.0 with PKCE. Scope: https://www.googleapis.com/auth/youtube.force-ssl. The creator can disconnect at any time. Disconnecting deletes the stored token and all indexed caption text for that channel.
+
+**What is stored.**
+- Refresh token, encrypted at rest with ARCHIVE_TOKEN_KEY.
+- Per video: id, title, published date, indexed state.
+- Caption cues for the creator's own videos, purged after the retention period in 13A.4.
+
+**What the creator can do.**
+- See their connected channel and list of uploads with indexed state.
+- Index a video's captions, on demand and within the daily budget.
+- Search their own indexed captions for a line. A match shows the video, the matched caption text, and an embedded player at the verified timestamp when the match is a caption cue with a timestamp.
+
+**What the creator cannot see or do.**
+- Other creators' captions or videos.
+- Any public list of creators with archives.
+
+**Result display.** Matched caption text is shown only to the signed-in creator, on the /creator page. The search page does not include the archive.
+
+**Budget and failures.** Keep the daily YouTube quota budget. A failed sign-in, token refresh, or caption call returns a clear message, never an unhandled throw (section 1, "never a dead end").
+
+**13A.4 Retention.** Caption cue text is purged after the retention period set in code. The creator can also purge it at any time from the /creator page.
+
+**Out of scope for the archive.**
+- Viewers searching anyone else's captions.
+- Listing creators to viewers.
+- Downloading video or audio.
+- Any caption source other than the creator's own YouTube captions.
+
+**Open question, owner decides before launch.** YouTube's policy text does not clearly cover showing caption text from an authorized channel to other people. This section keeps caption text private to the creator, so it does not depend on that answer. Showing matched caption text to viewers needs a separate policy check and a new spec change first.

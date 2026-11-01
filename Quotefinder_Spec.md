@@ -19,11 +19,11 @@ Use this document to build Quotefinder with any stack, tool, or AI coding assist
 
 Quotefinder is a web app. A user types or speaks a line they remember from a video. They optionally name the creator, choose a time window, and optionally describe the scene. The app then:
 
-Quotefinder also has a creator archive (section 13A). A creator with a YouTube channel signs in with Google, connects their own channel, and searches the captions of their own uploads. Caption text is only ever shown to that creator.
-
 1. Searches the creator's real uploads (or the wider web, if no creator is given) using YouTube's official API.
 2. Matches the remembered line against each video's title and description.
 3. Returns the matching video, an embedded player for it, and the full remembered sentence as the user typed or spoke it. It also says plainly that the exact timestamp was not verified, because the app does not read transcripts.
+
+Quotefinder also has a creator archive (section 13A). A creator with a YouTube channel signs in with Google, connects their own channel, and searches the captions of their own uploads. Caption text is only ever shown to that creator.
 
 If nothing matches confidently, the app still returns at least 10 real, verified candidate links. It never ends in a dead end.
 
@@ -477,7 +477,9 @@ In the browser, confirm:
 
 **Budget and failures.** Keep the daily YouTube quota budget. A failed sign-in, token refresh, or caption call returns a clear message, never an unhandled throw (section 1, "never a dead end").
 
-**13A.4 Retention.** Caption cue text is purged after the retention period set in code. The creator can also purge it at any time from the /creator page.
+### 13A.4 Retention
+
+Caption cue text is purged after 30 days. The creator can also purge it at any time from the /creator page.
 
 **Out of scope for the archive.**
 - Viewers searching anyone else's captions.

@@ -259,7 +259,6 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
         channelId: row.channel_id,
         channelTitle: row.channel_title,
         videoCount: store.countFreshVideos(row.channel_id, now),
-        listed: row.listed === 1,
       })),
       budget: {
         spentUnits: store.getSpent(todayKey(now)),

@@ -39,11 +39,6 @@ export interface StaleVideo {
   track_kind: string;
 }
 
-export interface ListedCreator {
-  channel_id: string;
-  channel_title: string;
-}
-
 export type VideoFreshness = "fresh" | "expired" | "never";
 
 export interface ArchiveStore {
@@ -73,9 +68,6 @@ export interface ArchiveStore {
   getMatchableVideos(channelId: string, now: Date): MatchableVideo[];
   /** Expired `asr` videos, newest first, for on-miss refresh (§7.4). */
   getStaleAsrVideos(channelId: string, now: Date): StaleVideo[];
-  /** §7.5 "List my archive" — viewer search scope. Default off. */
-  setListed(channelId: string, listed: boolean): void;
-  listListedCreators(): ListedCreator[];
   /** Latest viewer-triggered refresh of a channel, if any (ISO time). */
   lastChannelRefreshAt(channelId: string): string | null;
   /** Videos refreshed after `since`, for the 24-hour re-download rule. */
@@ -276,12 +268,6 @@ export function openArchiveStore(path: string): ArchiveStore {
       AND strftime('%s', fetched_at) <= strftime('%s', ?)
     ORDER BY published_at DESC, video_id ASC
   `);
-  const setListedStmt = db.prepare(
-    "UPDATE creators SET listed = ? WHERE channel_id = ?",
-  );
-  const listedStmt = db.prepare(
-    "SELECT channel_id, channel_title FROM creators WHERE listed = 1 ORDER BY created_at",
-  );
   const deleteChannelCuesStmt = db.prepare(`
     DELETE FROM cues WHERE video_id IN (
       SELECT video_id FROM videos WHERE channel_id = ?
@@ -459,12 +445,6 @@ export function openArchiveStore(path: string): ArchiveStore {
     },
     getStaleAsrVideos(channelId, now) {
       return staleAsrStmt.all(channelId, freshnessCutoff(now)) as StaleVideo[];
-    },
-    setListed(channelId, listed) {
-      setListedStmt.run(listed ? 1 : 0, channelId);
-    },
-    listListedCreators() {
-      return listedStmt.all() as ListedCreator[];
     },
     close() {
       db.close();

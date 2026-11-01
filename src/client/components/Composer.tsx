@@ -125,7 +125,7 @@ export function Composer({
 
       <div className="mt-3">
         <label htmlFor="scene" className="mb-1 block font-medium">
-          Scene
+          Topic or setting (optional)
         </label>
         <textarea
           id="scene"
@@ -135,7 +135,7 @@ export function Composer({
           onKeyDown={(e) => {
             if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submit();
           }}
-          placeholder="describe the scene — what was happening, who was on screen"
+          placeholder="e.g. interview about his first job, podcast, cooking show"
           disabled={disabled}
           className={inputClass}
         />

@@ -364,7 +364,7 @@ Expose the hook as `{ recording, transcribing, error, toggle }`.
 ### 10.2 Input area
 
 - **Quote row:** quote input with the microphone button, and a creator input.
-- **Scene field:** a two-row textarea with the prompt "describe the scene — what was happening, who was on screen".
+- **Scene field:** a two-row textarea with the prompt "e.g. interview about his first job, podcast, cooking show". The scene is a text hint for ranking only. The model does not see the video.
 - **Time window pills:** Any time · 24 hours · 7 days · 30 days · 2 months · 6 months · 1 year, plus a custom-days number input.
 - **Helper text:** "Say it however you remember it — the wording doesn't have to be right."
 

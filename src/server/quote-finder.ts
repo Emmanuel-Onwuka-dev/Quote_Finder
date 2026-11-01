@@ -384,10 +384,24 @@ export async function fallbackAnswer(
 
 // --- Step 4: link verification (§7.5). No hallucinated links. ---
 
+/** Empty or non-web URLs can never verify: reject them without a fetch,
+ * and without logging — an empty candidate URL is expected, not a failure. */
+function isWebUrl(url: string): boolean {
+  try {
+    const protocol = new URL(url).protocol;
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export async function urlExists(
   url: string,
   fetchFn: typeof fetch = fetch,
 ): Promise<boolean> {
+  if (!isWebUrl(url)) {
+    return false;
+  }
   try {
     if (isYouTubeWatchUrl(url)) {
       const res = await fetchFn(

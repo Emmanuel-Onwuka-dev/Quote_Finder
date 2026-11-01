@@ -456,6 +456,46 @@ describe("urlExists", () => {
       urlExists("https://example.com/missing", fetch),
     ).resolves.toBe(false);
   });
+
+  it("resolves false for an empty URL without fetching", async () => {
+    let calls = 0;
+    const fetchFn = (async (): Promise<Response> => {
+      calls += 1;
+      throw new Error("must not be called");
+    }) as unknown as typeof fetch;
+    await expect(urlExists("", fetchFn)).resolves.toBe(false);
+    expect(calls).toBe(0);
+  });
+
+  it("resolves false for a non-URL string without fetching", async () => {
+    let calls = 0;
+    const fetchFn = (async (): Promise<Response> => {
+      calls += 1;
+      throw new Error("must not be called");
+    }) as unknown as typeof fetch;
+    await expect(urlExists("not a url", fetchFn)).resolves.toBe(false);
+    expect(calls).toBe(0);
+  });
+
+  it("resolves false for a non-web URL without fetching", async () => {
+    let calls = 0;
+    const fetchFn = (async (): Promise<Response> => {
+      calls += 1;
+      throw new Error("must not be called");
+    }) as unknown as typeof fetch;
+    await expect(urlExists("ftp://example.test/x", fetchFn)).resolves.toBe(
+      false,
+    );
+    expect(calls).toBe(0);
+  });
+
+  it("still fetches a valid https URL", async () => {
+    const state = setup();
+    await expect(urlExists("https://example.com/ok", fetch)).resolves.toBe(
+      true,
+    );
+    expect(state.seen).toEqual(["HEAD https://example.com/ok"]);
+  });
 });
 
 describe("verifyUrls", () => {
@@ -792,6 +832,52 @@ describe("locateQuote", () => {
     expect(
       result.notes.some((note) => note.includes("estimate from memory")),
     ).toBe(true);
+  });
+
+  it("drops empty candidate URLs silently and keeps valid ones", async () => {
+    setup([
+      { status: 200, body: chatBody(VARIANTS_REPLY) },
+      { status: 200, body: chatBody(RANK_VID1_REPLY) },
+      {
+        status: 200,
+        body: chatBody(
+          fallbackReply({
+            found: false,
+            candidates: [
+              { url: "", title: "No link", reason: "empty" },
+              {
+                url: youtubeWatchUrl("vid2"),
+                title: "Cooking pasta",
+                reason: "Title match",
+              },
+            ],
+          }),
+        ),
+      },
+    ]);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const result = await locateQuote(
+        {
+          quote: "xylophone zephyr nebula",
+          creator: "@tester",
+          scene: "",
+          sinceDays: 0,
+        },
+        { llm: TEST_LLM, youtubeApiKey: "yt-key", fetchFn: fetch },
+      );
+      expect(
+        result.candidates.some(
+          (candidate) => candidate.url === youtubeWatchUrl("vid2"),
+        ),
+      ).toBe(true);
+      expect(
+        result.candidates.every((candidate) => candidate.url !== ""),
+      ).toBe(true);
+      expect(errors).not.toHaveBeenCalled();
+    } finally {
+      errors.mockRestore();
+    }
   });
 
   it("logs the ranking failure and still returns when ranking throws", async () => {

@@ -421,7 +421,7 @@ describe("search quota", () => {
       expect(events.some((entry) => entry.event === "result")).toBe(false);
       expect(events.at(-1)?.event).toBe("error");
       expect(events.at(-1)?.data).toEqual({
-        message: "search quota spent for today",
+        message: "Today's search limit is reached.",
       });
     } finally {
       store.close();

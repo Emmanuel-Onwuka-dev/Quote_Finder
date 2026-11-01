@@ -244,7 +244,7 @@ Stream the ranking and fallback calls to `TEXT_MODEL` through the Meta Model API
 - A `whenLine` gives the human-readable window and tells the model to return nothing older. Use these labels: "the last 24 hours", "7 days", "30 days", "2 months", "6 months", "the last year".
 - Provide the real fetched catalogue: shortlist titles, descriptions, and URLs. The model must choose only from real URLs.
 - **Ask for 10 plausible candidate videos with real, watchable URLs when unsure.** The app returns at least 10 verified candidate links when a YouTube search can run, or says plainly that it could not verify enough. When the search quota is spent and no candidate can be verified, the app says so plainly and shows no links. It never shows unverified links as results, and it never guesses a URL.
-- Say that the AI's answer is an estimate from memory, not a verified match.
+- Say that this is an estimate from memory, not a verified match.
 - Reply with a single JSON object with these fields:
   `found`, `confidence`, `videoUrl`, `videoTitle`, `publishedAt`, `startTime`, `endTime`, `fullSentence`, `context`, `notes`, `candidates[]`
 

@@ -249,7 +249,7 @@ export interface PromptContext {
 
 function catalogueBlock(shortlist: VideoMeta[]): string {
   if (shortlist.length === 0) {
-    return "Catalogue: no videos were fetched.";
+    return "Candidate videos: none could be checked today.";
   }
   const lines = shortlist.map((video, index) => {
     const description =
@@ -364,7 +364,7 @@ const FALLBACK_SYSTEM = [
   "The creator line says UNKNOWN when blank. In that case, identify who said the line. Prefer the original source. Viral clips, interviews, films, speeches, and podcasts all count.",
   "Where: restrict answers to real YouTube watch URLs.",
   "Always list 10 plausible candidate videos with real, watchable URLs when unsure.",
-  "Say that the AI's answer is an estimate from memory, not a verified match.",
+  "Say that this is an estimate from memory, not a verified match.",
   "Reply with ONLY a single JSON object with these fields: found, confidence, videoUrl, videoTitle, publishedAt, startTime, endTime, fullSentence, context, notes, candidates[]. No other text.",
 ].join(" ");
 
@@ -481,7 +481,7 @@ const UNVERIFIED_NOTE =
 
 const SEARCH_QUOTA_SPENT_NOTE =
   "Today's search limit is reached, so we are answering from memory.";
-const SEARCH_QUOTA_SPENT = "search quota spent for today";
+const SEARCH_QUOTA_SPENT = "Today's search limit is reached.";
 
 /** Candidate-count note with correct singular/plural (and no "only 0"). */
 export function trustedCandidatesNote(count: number): string {

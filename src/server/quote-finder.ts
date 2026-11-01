@@ -175,7 +175,38 @@ function extractJson(text: string, open: "{" | "["): unknown {
 // Model replies use null where the prompt implies "unknown". Treat null
 // exactly like a missing field, keeping today's defaults.
 const nullString = z.string().nullish().transform((value) => value ?? "");
-const nullNumber = z.number().nullish().transform((value) => value ?? 0);
+
+// Model times arrive as numbers, numeric strings, or clock strings.
+// Anything unparseable (including null) becomes 0.
+function timeToSeconds(value: unknown): number {
+  if (typeof value === "number") {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return 0;
+  }
+  const text = value.trim();
+  if (text === "") {
+    return 0;
+  }
+  if (text.includes(":")) {
+    const parts = text.split(":").map((part) => Number(part.trim()));
+    if (parts.some((part) => !Number.isFinite(part) || part < 0)) {
+      return 0;
+    }
+    let total = 0;
+    for (const part of parts) {
+      total = total * 60 + part;
+    }
+    return total;
+  }
+  const numeric = Number(text);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+// Preprocess, like confidence: a failing parse must never fall through
+// to a transform. Output stays number.
+const nullTime = z.preprocess(timeToSeconds, z.number());
 
 const VariantsSchema = z.array(nullString);
 
@@ -314,8 +345,8 @@ const FallbackSchema = z.object({
   videoUrl: nullString,
   videoTitle: nullString,
   publishedAt: nullString,
-  startTime: nullNumber,
-  endTime: nullNumber,
+  startTime: nullTime,
+  endTime: nullTime,
   fullSentence: nullString,
   context: nullString,
   notes: nullString,

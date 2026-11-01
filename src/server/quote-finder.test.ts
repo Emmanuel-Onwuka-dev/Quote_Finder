@@ -397,6 +397,45 @@ describe("fallbackAnswer null handling", () => {
   });
 });
 
+describe("fallbackAnswer time strings", () => {
+  it("parses numeric and clock time strings", async () => {
+    setup([
+      {
+        status: 200,
+        body: chatBody(fallbackReply({ startTime: "83", endTime: "1:23" })),
+      },
+    ]);
+    await expect(
+      fallbackAnswer(contextWith([]), TEST_LLM, fetch),
+    ).resolves.toMatchObject({ startTime: 83, endTime: 83 });
+    setup([
+      {
+        status: 200,
+        body: chatBody(
+          fallbackReply({ startTime: "1:02:03", endTime: "83.5" }),
+        ),
+      },
+    ]);
+    await expect(
+      fallbackAnswer(contextWith([]), TEST_LLM, fetch),
+    ).resolves.toMatchObject({ startTime: 3723, endTime: 83.5 });
+  });
+
+  it("treats nonsense times as 0 without throwing", async () => {
+    setup([
+      {
+        status: 200,
+        body: chatBody(
+          fallbackReply({ startTime: "soon", endTime: "yesterday" }),
+        ),
+      },
+    ]);
+    await expect(
+      fallbackAnswer(contextWith([]), TEST_LLM, fetch),
+    ).resolves.toMatchObject({ startTime: 0, endTime: 0 });
+  });
+});
+
 describe("urlExists", () => {
   it("checks YouTube URLs with oEmbed", async () => {
     setup();
@@ -704,6 +743,49 @@ describe("locateQuote", () => {
         (candidate) => candidate.url === youtubeWatchUrl("vid2"),
       ),
     ).toBe(true);
+    expect(
+      result.notes.some((note) => note.includes("fallback was unavailable")),
+    ).toBe(false);
+    expect(
+      result.notes.some((note) => note.includes("estimate from memory")),
+    ).toBe(true);
+  });
+
+  it("answers from memory when the fallback reply has time strings", async () => {
+    setup([
+      { status: 200, body: chatBody(VARIANTS_REPLY) },
+      { status: 200, body: chatBody(RANK_VID1_REPLY) },
+      {
+        status: 200,
+        body: chatBody(
+          fallbackReply({
+            found: false,
+            videoUrl: youtubeWatchUrl("vid1"),
+            videoTitle: "My quantum bicycle build",
+            startTime: "1:23",
+            endTime: "1:02:03",
+            candidates: [
+              {
+                url: youtubeWatchUrl("vid2"),
+                title: "Cooking pasta",
+                reason: "Title match",
+              },
+            ],
+          }),
+        ),
+      },
+    ]);
+    const result = await locateQuote(
+      {
+        quote: "xylophone zephyr nebula",
+        creator: "@tester",
+        scene: "",
+        sinceDays: 0,
+      },
+      { llm: TEST_LLM, youtubeApiKey: "yt-key", fetchFn: fetch },
+    );
+    expect(result.found).toBe(false);
+    expect(result.candidates.length).toBeGreaterThan(0);
     expect(
       result.notes.some((note) => note.includes("fallback was unavailable")),
     ).toBe(false);

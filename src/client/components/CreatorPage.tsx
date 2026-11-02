@@ -135,7 +135,8 @@ export function CreatorPage() {
         <main className="rounded-xl border border-border bg-card p-5">
           {params.get("connected") === "1" && (
             <p className="mb-3 rounded-lg border border-border p-3">
-              Connected. Your sign-in is stored on this server only.
+              Connected. Your sign-in is stored on this server only. Next,
+              choose the videos you want to search below.
             </p>
           )}
           {params.get("error") && (
@@ -151,8 +152,8 @@ export function CreatorPage() {
           )}
           {status && (
             <p className="mb-3 font-mono text-sm text-muted">
-              Units used today: {status.budget.spentUnits} /{" "}
-              {status.budget.capUnits}
+              Indexing budget used today: {status.budget.spentUnits} of{" "}
+              {status.budget.capUnits}.
             </p>
           )}
           {creators === null && !loadError && (
@@ -182,7 +183,7 @@ export function CreatorPage() {
                   {creator.channelTitle || "Connected channel"}
                 </h2>
                 <p className="mt-1 font-mono text-sm text-muted">
-                  Indexed videos: {creator.videoCount}
+                  Videos ready to search: {creator.videoCount}
                 </p>
                 <CreatorIndexing
                   channelId={creator.channelId}
@@ -266,7 +267,13 @@ function CreatorSearch({
 
   return (
     <div className="mt-4 border-t border-border pt-3">
-      <h3 className="font-display text-lg font-bold">Search your captions</h3>
+      <h3 className="font-display text-lg font-bold">
+        Step 2: Search for a line
+      </h3>
+      <p className="mt-2 text-muted">
+        Type or say a line as it was spoken in one of your indexed videos.
+        Only indexed videos are searched.
+      </p>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -303,7 +310,10 @@ function CreatorSearch({
         </p>
       )}
       {matches !== null && matches.length === 0 && !searchError && (
-        <p className="mt-3 text-muted">No matching line in your archive.</p>
+        <p className="mt-3 text-muted">
+          No match found. Check that the video shows as indexed, then try a
+          shorter part of the line, such as three or four words.
+        </p>
       )}
       {matches !== null && matches.length > 0 && (
         <ol>
@@ -486,7 +496,14 @@ function CreatorIndexing({
 
   return (
     <div className="mt-4 border-t border-border pt-3">
-      <h3 className="font-display text-lg font-bold">Index videos</h3>
+      <h3 className="font-display text-lg font-bold">
+        Step 1: Choose videos to search
+      </h3>
+      <p className="mt-2 text-muted">
+        Tick the videos you want to search, then press the button. Indexing
+        reads each video&apos;s captions so you can find lines from them. This
+        can take a few minutes.
+      </p>
       {videosError && (
         <p role="alert" className="mt-2 text-destructive">
           {videosError}
@@ -547,7 +564,9 @@ function CreatorIndexing({
             >
               {running
                 ? "Indexing…"
-                : `Index selected (${selected.size})`}
+                : selected.size === 0
+                  ? "Tick at least one video first."
+                  : `Index selected (${selected.size})`}
             </button>
           </div>
         </>
@@ -585,7 +604,7 @@ function CreatorIndexing({
             ))}
           </ul>
           <p className="mt-2 font-mono text-sm text-muted">
-            Units used today: {summary.spentUnits}
+            Indexing budget used today: {summary.spentUnits}.
           </p>
         </div>
       )}

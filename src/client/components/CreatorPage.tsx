@@ -153,7 +153,7 @@ export function CreatorPage() {
           {status && (
             <p className="mb-3 font-mono text-sm text-muted">
               Indexing budget used today: {status.budget.spentUnits} of{" "}
-              {status.budget.capUnits}.
+              {status.budget.capUnits}. The limit resets at midnight UTC.
             </p>
           )}
           {creators === null && !loadError && (
@@ -187,6 +187,7 @@ export function CreatorPage() {
                 </p>
                 <CreatorIndexing
                   channelId={creator.channelId}
+                  capUnits={status?.budget.capUnits ?? 0}
                   onDone={load}
                 />
                 <CreatorSearch
@@ -271,8 +272,8 @@ function CreatorSearch({
         Step 2: Search for a line
       </h3>
       <p className="mt-2 text-muted">
-        Type or say a line as it was spoken in one of your indexed videos.
-        Only indexed videos are searched.
+        Type or say a line as it was spoken in one of your videos. Only
+        videos listed as ready to search are checked.
       </p>
       <form
         onSubmit={(event) => {
@@ -311,8 +312,9 @@ function CreatorSearch({
       )}
       {matches !== null && matches.length === 0 && !searchError && (
         <p className="mt-3 text-muted">
-          No match found. Check that the video shows as indexed, then try a
-          shorter part of the line, such as three or four words.
+          No match found. Check that the video is in 'Videos ready to
+          search', then try a shorter part of the line, such as three or
+          four words.
         </p>
       )}
       {matches !== null && matches.length > 0 && (
@@ -330,9 +332,11 @@ function CreatorSearch({
 
 function CreatorIndexing({
   channelId,
+  capUnits,
   onDone,
 }: {
   channelId: string;
+  capUnits: number;
   onDone: () => void;
 }) {
   const [videos, setVideos] = useState<VideoEntry[] | null>(null);
@@ -500,9 +504,10 @@ function CreatorIndexing({
         Step 1: Choose videos to search
       </h3>
       <p className="mt-2 text-muted">
-        Tick the videos you want to search, then press the button. Indexing
-        reads each video&apos;s captions so you can find lines from them. This
-        can take a few minutes.
+        Tick the videos you want to search, then press the button. We read
+        each video&apos;s captions so you can search for lines in them. This
+        can take a few minutes. Captions are kept for 30 days, then removed.
+        You can index a video again at any time.
       </p>
       {videosError && (
         <p role="alert" className="mt-2 text-destructive">
@@ -604,7 +609,8 @@ function CreatorIndexing({
             ))}
           </ul>
           <p className="mt-2 font-mono text-sm text-muted">
-            Indexing budget used today: {summary.spentUnits}.
+            Indexing budget used today: {summary.spentUnits} of {capUnits}.
+            The limit resets at midnight UTC.
           </p>
         </div>
       )}

@@ -233,9 +233,7 @@ export function useVoiceInput({
       }
       const context = new AudioContext();
       try {
-        await context.audioWorklet.addModule(
-          new URL("./capture.worklet.ts", import.meta.url),
-        );
+        await context.audioWorklet.addModule("/capture-worklet.js");
       } catch {
         await context.close().catch(() => {});
         for (const track of stream.getTracks()) {

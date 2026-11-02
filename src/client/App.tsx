@@ -127,6 +127,11 @@ export default function App() {
           </p>
           <p className="mt-2">
             <a href="/creator" className="text-sm text-accent underline">
+              For creators: connect your channel
+            </a>
+          </p>
+          <p className="mt-2">
+            <a href="/creator" className="text-sm text-accent underline">
               Find the moment you said it, in your own videos.
             </a>
           </p>

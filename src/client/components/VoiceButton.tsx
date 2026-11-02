@@ -81,7 +81,7 @@ const METER_BAR_GAP = 4;
 const METER_MIN_HEIGHT = 2;
 
 /** Live voice meter: canvas bars that bounce while the person talks
- * and fall flat in silence. Decorative — the status lines carry the
+ * and fall flat in silence. Decorative. The status lines carry the
  * recording state for assistive tech. */
 export function VoiceMeter({ voice }: { voice: VoiceInput }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);

@@ -1,6 +1,6 @@
 // Pure scroll-follow decision for the chat view: while a search runs, the
 // page stays pinned to the bottom so new rows and the result appear above
-// the composer — unless the user scrolled up to read history. Unit tested
+// the composer, unless the user scrolled up to read history. Unit tested
 // in scroll.test.ts.
 
 /** Pinned when the viewport bottom is within this distance of the page end. */

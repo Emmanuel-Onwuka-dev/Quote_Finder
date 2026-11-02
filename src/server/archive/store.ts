@@ -10,7 +10,7 @@ export interface CreatorRow {
   channel_id: string;
   channel_title: string;
   token_enc: string;
-  /** §7.5 "List my archive" — viewer search scope. Default off. */
+  /** §7.5 "List my archive": viewer search scope. Default off. */
   listed: number;
   created_at: string;
 }

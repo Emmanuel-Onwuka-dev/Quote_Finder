@@ -24,7 +24,7 @@ export interface VoiceInput {
   error: string | null;
   toggle: () => void;
   /** Live meter levels (0–1 per bar) while recording, else null. The
-   * returned array is reused — read it synchronously each frame. */
+   * returned array is reused. Read it synchronously each frame. */
   getMeterLevels: () => number[] | null;
 }
 

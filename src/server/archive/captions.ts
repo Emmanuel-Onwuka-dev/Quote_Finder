@@ -1,6 +1,6 @@
 // YouTube captions API for the creator archive (§4.2): list a video's
 // caption tracks and download the SRT text. All calls use the creator's
-// OAuth access token — an API key is not enough.
+// OAuth access token. An API key is not enough.
 
 export const CAPTIONS_LIST_COST = 50;
 export const CAPTIONS_DOWNLOAD_COST = 200;

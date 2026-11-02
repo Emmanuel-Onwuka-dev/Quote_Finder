@@ -1,7 +1,7 @@
 // Creator archive HTTP routes (§4.1–§4.4): OAuth connect, status, upload
 // listing, caption indexing, creator-only caption search, and disconnect.
 // Mounted at /api/archive. Secrets never leave the server: the browser
-// sees channel titles and counts — plus, on the /creator page only, the
+// sees channel titles and counts, plus, on the /creator page only, the
 // signed-in creator's own matched caption text.
 
 import { Hono } from "hono";
@@ -540,8 +540,8 @@ export function createArchiveRoutes(deps: ArchiveDeps) {
     if (!row) {
       return c.json({ message: "channel is not connected" }, 404);
     }
-    // Best effort: local data — credentials, videos, and cues, in one
-    // transaction — is deleted even when the revoke call fails (e.g. the
+    // Best effort: local data (credentials, videos, and cues, in one
+    // transaction) is deleted even when the revoke call fails (e.g. the
     // token was already revoked at Google), so the creator can always
     // get out.
     let revoked = true;

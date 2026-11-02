@@ -67,8 +67,8 @@ export function appendTranscriptChunk(
  * final transcription on stop. */
 export type VoiceErrorStage = "start" | "interim" | "final";
 
-/** Interim chunks fail quietly — a silent chunk is normal while
- * dictating — while start and final failures surface to the user. */
+/** Interim chunks fail quietly. A silent chunk is normal while
+ * dictating, while start and final failures surface to the user. */
 export function shouldShowVoiceError(stage: VoiceErrorStage): boolean {
   return stage !== "interim";
 }

@@ -457,7 +457,7 @@ export async function searchChannel(
     // §5.1: when the full index cannot be built, fall back to in-channel
     // search (the quote plus the Muse variants as extra queries).
     logError("YouTube search", error, { quoteLength: quote.length });
-    onProgress("Indexing uploads", "index unavailable — searching in-channel");
+    onProgress("Indexing uploads", "index unavailable, searching in-channel");
     const searched = await searchQueries(
       quote,
       variants,
@@ -521,8 +521,8 @@ export async function searchEverywhere(
       ...(await searchVideos(variant, apiKey, undefined, 8, reserveQuota)),
     );
   }
-  // §7.6: the time window filters this path like the channel index —
-  // filter before merging so the pool stays full of fresh videos.
+  // §7.6: the time window filters this path like the channel index.
+  // Filter before merging so the pool stays full of fresh videos.
   const shortlist = mergeShortlist(
     filterAfter(quoted, publishedAfter),
     filterAfter([...bare, ...extra], publishedAfter),

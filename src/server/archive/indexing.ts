@@ -1,6 +1,6 @@
 // Caption indexing runs (§4.2): for each selected video, spend budget,
 // fetch the best caption track, download and parse the SRT. Results are
-// returned, not stored — A3 persists them. Progress mirrors the search
+// returned, not stored. A3 persists them. Progress mirrors the search
 // SSE pattern (one event per video plus its outcome).
 
 import {
@@ -77,13 +77,13 @@ export async function runIndexing(
       tracks = await listCaptionTracks(videoId, accessToken, fetchFn);
     } catch (error) {
       skipped.push({ videoId, reason: describe(error) });
-      onProgress("Indexing videos", `${label} — skipped`);
+      onProgress("Indexing videos", `${label}, skipped`);
       continue;
     }
     const track = pickTrack(tracks);
     if (!track) {
       skipped.push({ videoId, reason: "no usable caption track" });
-      onProgress("Indexing videos", `${label} — skipped`);
+      onProgress("Indexing videos", `${label}, skipped`);
       continue;
     }
     if (!store.trySpend(day, CAPTIONS_DOWNLOAD_COST, budgetKind)) {
@@ -96,7 +96,7 @@ export async function runIndexing(
       );
       if (cues.length === 0) {
         skipped.push({ videoId, reason: "captions were empty" });
-        onProgress("Indexing videos", `${label} — skipped`);
+        onProgress("Indexing videos", `${label}, skipped`);
         continue;
       }
       indexed.push({
@@ -106,10 +106,10 @@ export async function runIndexing(
         language: track.language,
         cues,
       });
-      onProgress("Indexing videos", `${label} — ${cues.length} cues`);
+      onProgress("Indexing videos", `${label}, ${cues.length} cues`);
     } catch (error) {
       skipped.push({ videoId, reason: describe(error) });
-      onProgress("Indexing videos", `${label} — skipped`);
+      onProgress("Indexing videos", `${label}, skipped`);
     }
   }
 

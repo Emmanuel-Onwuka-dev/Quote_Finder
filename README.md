@@ -4,7 +4,7 @@ Type or speak a line you remember from a video. Quotefinder searches the
 creator's real YouTube uploads (or the wider YouTube catalogue when no creator
 is given), matches the line against titles and descriptions, and returns the
 matching video with an embedded player. Timestamps are not verified in this
-version — the app does not read transcripts.
+version. The app does not read transcripts.
 
 Built for the **Build for Your World** hackathon. All work on this project,
 including code, README, and spec, starts on Oct 27, 2026 and finishes by the
@@ -40,50 +40,50 @@ this version does not depend on that answer.
   tags, server config, Meta API client stub, health endpoint.
 - P1: YouTube engine (channel resolution, upload index, in-channel and
   everywhere search) with fuzzy title/description matching and unit tests.
-- P2: `locateQuote` orchestrator — Muse query variants, shortlist-only
+- P2: `locateQuote` orchestrator: Muse query variants, shortlist-only
   ranking, memory fallback with verified links (oEmbed/HEAD), found
   thresholds, medium confidence cap, and time-window handling, with mocked
   unit tests.
-- P3a: `POST /api/quote-stream` — zod body validation, `locateQuote`
+- P3a: `POST /api/quote-stream`: zod body validation, `locateQuote`
   progress streamed as SSE stages, `result`/`error` events, with endpoint
   tests.
-- P3b: chat UI — session-only turns, live SSE progress, result card
+- P3b: chat UI: session-only turns, live SSE progress, result card
   (nocookie embed, unverified notice), candidate list, `openExternal`
   links, original SVG brand, SEO tags, and lib unit tests.
-- A1: creator archive foundation — Google OAuth (PKCE) connect/disconnect
+- A1: creator archive foundation: Google OAuth (PKCE) connect/disconnect
   for creators, encrypted refresh-token storage in SQLite, `/creator`
   page, and endpoint tests with mocked Google responses.
-- A2: caption indexing pipeline — SRT parser, captions API client, daily
+- A2: caption indexing pipeline: SRT parser, captions API client, daily
   budget counter, token refresh, videos/index routes, and creator
   indexing UI with live progress.
-- A3: archive storage — videos/cues tables, purge of expired cue text,
+- A3: archive storage: videos/cues tables, purge of expired cue text,
   indexed states, real video counts, and transactional revoke-and-delete.
-- A4: caption-window matching — 3-to-6-cue windows scored with the shared
+- A4: caption-window matching: 3-to-6-cue windows scored with the shared
   fuzzy overlap, ASR confidence cap, archive search endpoint with on-miss
   ASR refresh, listed-creators scope, and the verified-timestamp result.
-- A5 (removed): viewer archive UI — creator picker on the search page,
+- A5 (removed): viewer archive UI: creator picker on the search page,
   archive result card there, and miss/retry states. Removed when the archive
   went creator-only; caption text is shown only to the signed-in creator.
-- P4: voice input — `POST /api/transcribe` (WAV validation, Meta ASR
+- P4: voice input: `POST /api/transcribe` (WAV validation, Meta ASR
   forward with 429/500 retries), `use-voice-input` hook (AudioWorklet
   capture, 16 kHz mono WAV), mic button with recording/transcribing
   states, and endpoint plus audio unit tests.
-- P5: Glimmer variant integration — optional second-model rephrasings
+- P5: Glimmer variant integration: optional second-model rephrasings
   from `OPEN_MODEL_URL` appended to the Spark variants, never fatal.
   Glimmer takes one of the three search slots, with a 5-second timeout;
   the model name comes from OPEN_MODEL_NAME. Off on the hosted version:
   it needs a local Glimmer server reachable at OPEN_MODEL_URL.
-- P5: Image quote cards — `POST /api/quote-card` renders a shareable
+- P5: Image quote cards: `POST /api/quote-card` renders a shareable
   card for each found result, shown in the result card, hidden on
   failure.
-- P6: result card sharing — Share button (browser share sheet, copy
+- P6: result card sharing: Share button (browser share sheet, copy
   fallback) on found results, Download card button, and share text
   marking the remembered line as not verified.
-- P7: creator archive share link — video title and link only; caption
+- P7: creator archive share link: video title and link only; caption
   text is never shared.
-- P8: voice input errors — silent interim chunks, plain "We didn't hear
+- P8: voice input errors: silent interim chunks, plain "We didn't hear
   any speech" message on stop, and start and final errors still shown.
-- P9: fallback reliability — nullable and clock-string fields accepted
+- P9: fallback reliability: nullable and clock-string fields accepted
   from the model, empty or non-web URLs skipped before fetch.
 - P10: server error logging with step names and redaction; Sentry
   alerts when SENTRY_DSN is set.
@@ -110,7 +110,7 @@ npm run typecheck
 npm test
 ```
 
-Keys go in `.env` on your machine or the platform secret store — never in chat,
+Keys go in `.env` on your machine or the platform secret store. Never in chat,
 source files, or the browser.
 
 Heavy testing day? Raise the daily search quota for the server session

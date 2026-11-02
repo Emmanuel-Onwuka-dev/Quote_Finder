@@ -148,7 +148,7 @@ export function overlapScore(needle: string, haystack: string): number {
 
 // Guard: fraction of distinctive (6+ char) needle words present in the
 // haystack, counting near-misses. Returns 1 when the needle has no
-// distinctive words — short quotes carry no substance to guard.
+// distinctive words. Short quotes carry no substance to guard.
 export function keyCoverage(needle: string, haystack: string): number {
   const distinctive = tokens(needle).filter((w) => w.length >= 6);
   if (distinctive.length === 0) {

@@ -30,7 +30,7 @@ export function Progress({ events }: { events: ProgressUpdate[] }) {
                   <span>
                     <span className="font-medium">{update.stage}</span>
                     {update.detail && (
-                      <span className="text-muted"> — {update.detail}</span>
+                      <span className="text-muted">: {update.detail}</span>
                     )}
                   </span>
                 </li>

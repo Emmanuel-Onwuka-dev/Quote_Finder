@@ -21,7 +21,7 @@ export default function App() {
 
   // Chat-style follow: keep the newest turn's latest content in view above
   // the composer as progress streams in and the result lands. Never yanks
-  // the user away from history they scrolled up to read — except right
+  // the user away from history they scrolled up to read, except right
   // after their own submit/retry, which always brings the new turn into view.
   useEffect(() => {
     if (turns.length === 0) return;
@@ -140,7 +140,7 @@ export default function App() {
         <main className="flex-1 pb-8">
           {turns.length === 0 ? (
             <p className="text-muted">
-              No searches yet — try describing a video.
+              No searches yet. Try describing a video.
             </p>
           ) : (
             <ol className="space-y-6">

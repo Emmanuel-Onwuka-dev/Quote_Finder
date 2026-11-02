@@ -55,7 +55,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
 export function requireKey(value: string, name: string): string {
   if (!value) {
     throw new Error(
-      `Missing server env ${name}. Set it in .env (local dev) or the platform secret store — never in chat or source.`,
+      `Missing server env ${name}. Set it in .env (local dev) or the platform secret store. Never in chat or source.`,
     );
   }
   return value;

@@ -6,7 +6,7 @@
 import { close, keyCoverage, overlapScore, tokens } from "../fuzzy";
 import type { CaptionCue } from "./srt";
 
-/** §5.2 confidence bars — the same values quote-finder uses. */
+/** §5.2 confidence bars: the same values quote-finder uses. */
 const HIGH_AT = 0.8;
 const MEDIUM_AT = 0.55;
 /** §5.2 distinctive-word guard, as for metadata. */

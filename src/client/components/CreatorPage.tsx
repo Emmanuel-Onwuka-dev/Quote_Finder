@@ -286,7 +286,7 @@ function CreatorSearch({
           type="text"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder={`A line from ${channelTitle || "your channel"} — or say it out loud`}
+          placeholder={`A line from ${channelTitle || "your channel"}? Or say it out loud`}
           disabled={searching}
           className="w-full rounded-lg border border-border bg-background px-3 py-2 text-foreground placeholder:text-muted disabled:opacity-60"
         />
@@ -384,7 +384,7 @@ function CreatorIndexing({
         );
         setNextPageToken(data.nextPageToken);
         if (!pageToken) {
-          // Default to the most recent 20 that still need indexing —
+          // Default to the most recent 20 that still need indexing:
           // expired first, then unindexed, fresh videos excluded.
           const expired = data.videos.filter((v) => v.indexed === "expired");
           const unindexed = data.videos.filter((v) => v.indexed === "never");
@@ -542,7 +542,7 @@ function CreatorIndexing({
                     )}
                     {video.indexed === "expired" && (
                       <span className="text-sm text-accent">
-                        Expired — index again
+                        Expired: index again
                       </span>
                     )}
                   </label>
@@ -604,7 +604,7 @@ function CreatorIndexing({
             ))}
             {summary.skipped.map((video) => (
               <li key={video.videoId} className="text-muted">
-                {titleOf(video.videoId)} — skipped ({video.reason})
+                {titleOf(video.videoId)}, skipped ({video.reason})
               </li>
             ))}
           </ul>

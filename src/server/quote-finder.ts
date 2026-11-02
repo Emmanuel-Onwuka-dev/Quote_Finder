@@ -1,4 +1,4 @@
-// Orchestrator (§7): locateQuote — Muse query variants → YouTube
+// Orchestrator (§7): locateQuote: Muse query variants → YouTube
 // search/score → Muse ranking → memory fallback with verified links.
 // No transcripts anywhere: every confidence caps at medium.
 
@@ -257,9 +257,9 @@ function catalogueBlock(shortlist: VideoMeta[]): string {
         ? `${video.description.slice(0, 300)}…`
         : video.description;
     const date = video.publishedAt.slice(0, 10) || "undated";
-    return `${index + 1}. ${video.title} — ${date} — ${youtubeWatchUrl(video.id)}\n   ${description}`;
+    return `${index + 1}. ${video.title}, ${date}, ${youtubeWatchUrl(video.id)}\n   ${description}`;
   });
-  return `Videos checked today (real, fetched from YouTube — choose ONLY these URLs):\n${lines.join("\n")}`;
+  return `Videos checked today (real, fetched from YouTube; choose ONLY these URLs):\n${lines.join("\n")}`;
 }
 
 function contextBlock(context: PromptContext): string {
@@ -267,7 +267,7 @@ function contextBlock(context: PromptContext): string {
     `Quote (remembered, wording unreliable): ${context.quote}`,
     `Creator: ${context.creatorLine}`,
     `Scene: ${context.sceneLine || "(none given)"}`,
-    `Window: ${context.whenLine} — return nothing older.`,
+    `Window: ${context.whenLine}. Return nothing older.`,
   ];
   if (context.variants.length > 0) {
     lines.push(`Alternative wordings: ${context.variants.join(" | ")}`);
@@ -323,7 +323,7 @@ export async function rankShortlist(
   }
 }
 
-// --- Step 3: fallback (§7.3.3). Throws on failure — caller degrades. ---
+// --- Step 3: fallback (§7.3.3). Throws on failure; the caller degrades. ---
 
 const FallbackCandidateSchema = z.object({
   url: nullString,
@@ -385,7 +385,7 @@ export async function fallbackAnswer(
 // --- Step 4: link verification (§7.5). No hallucinated links. ---
 
 /** Empty or non-web URLs can never verify: reject them without a fetch,
- * and without logging — an empty candidate URL is expected, not a failure. */
+ * and without logging. An empty candidate URL is expected, not a failure. */
 function isWebUrl(url: string): boolean {
   try {
     const protocol = new URL(url).protocol;
@@ -456,7 +456,7 @@ export async function verifyUrls(
 function confidenceForScore(score: number): Confidence {
   const raw: Confidence =
     score >= HIGH_AT ? "high" : score >= MEDIUM_AT ? "medium" : "low";
-  // §5.6/§7.2: metadata-only matches cap at medium — this version never
+  // §5.6/§7.2: metadata-only matches cap at medium: this version never
   // verifies the moment a line is said.
   return raw === "high" ? "medium" : raw;
 }

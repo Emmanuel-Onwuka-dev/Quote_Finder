@@ -372,7 +372,7 @@ Expose the hook as `{ recording, transcribing, error, toggle }`. It also exposes
 - **Quote row:** quote input with the microphone button, and a creator input.
 - **Scene field:** a two-row textarea with the prompt "e.g. interview about his first job, podcast, cooking show". The scene is a text hint for ranking only. The model does not see the video.
 - **Time window pills:** Any time · 24 hours · 7 days · 30 days · 2 months · 6 months · 1 year, plus a custom-days number input.
-- **Helper text:** "Describe the video in your own words. The exact wording doesn't have to be right."
+- **Helper text:** "Know roughly what a video was about? Find it."
 
 ### 10.3 Result card (found)
 

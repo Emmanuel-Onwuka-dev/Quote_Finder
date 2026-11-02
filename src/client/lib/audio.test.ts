@@ -4,8 +4,10 @@ import {
   computeMeterLevels,
   concatSamples,
   encodeWavPcm16,
+  finalVoiceError,
   interimCallAllowed,
   resampleLinear,
+  shouldShowVoiceError,
   VOICE_METER_BARS,
   VOICE_SAMPLE_RATE,
   VOICE_WAV_HEADER_BYTES,
@@ -125,6 +127,34 @@ describe("appendTranscriptChunk", () => {
   it("trims chunk text and ignores empty chunks", () => {
     expect(appendTranscriptChunk("hello", "  world  ")).toBe("hello world");
     expect(appendTranscriptChunk("hello", "   ")).toBe("hello");
+  });
+});
+
+describe("shouldShowVoiceError", () => {
+  it("stays silent for interim failures", () => {
+    expect(shouldShowVoiceError("interim")).toBe(false);
+  });
+
+  it("shows start and final failures", () => {
+    expect(shouldShowVoiceError("start")).toBe(true);
+    expect(shouldShowVoiceError("final")).toBe(true);
+  });
+});
+
+describe("finalVoiceError", () => {
+  it("maps no-text failures to the friendly message", () => {
+    expect(finalVoiceError("transcription returned no text")).toBe(
+      "We didn't hear any speech. Try again.",
+    );
+    expect(finalVoiceError("the server sent back no text")).toBe(
+      "We didn't hear any speech. Try again.",
+    );
+  });
+
+  it("keeps other final errors as they are", () => {
+    expect(
+      finalVoiceError("Voice input is busy today, type the line instead."),
+    ).toBe("Voice input is busy today, type the line instead.");
   });
 });
 

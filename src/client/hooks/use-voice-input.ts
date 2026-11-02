@@ -4,10 +4,13 @@ import {
   computeMeterLevels,
   concatSamples,
   encodeWavPcm16,
+  finalVoiceError,
   interimCallAllowed,
   resampleLinear,
+  shouldShowVoiceError,
   VOICE_METER_BARS,
   VOICE_SAMPLE_RATE,
+  type VoiceErrorStage,
 } from "../lib/audio";
 
 /** Live captions: transcribe a chunk this often while recording, so
@@ -152,6 +155,12 @@ export function useVoiceInput({
     [],
   );
 
+  const fail = useCallback((stage: VoiceErrorStage, message: string) => {
+    if (shouldShowVoiceError(stage)) {
+      setError(message);
+    }
+  }, []);
+
   const transcribeInterim = useCallback(
     async (session: number): Promise<void> => {
       const capture = captureRef.current;
@@ -186,13 +195,15 @@ export function useVoiceInput({
         onTextRef.current(dictatedRef.current);
       } catch (error) {
         // An interim failure doesn't stop the recording; the final
-        // transcription on stop still gets its chance.
+        // transcription on stop still gets its chance. Interim errors
+        // stay silent: a quiet chunk is normal while dictating.
         if (
           !cancelledRef.current &&
           session === sessionRef.current &&
           recordingRef.current
         ) {
-          setError(
+          fail(
+            "interim",
             error instanceof Error ? error.message : "transcription failed",
           );
         }
@@ -200,7 +211,7 @@ export function useVoiceInput({
         interimBusyRef.current = false;
       }
     },
-    [postWav],
+    [fail, postWav],
   );
 
   const start = useCallback(async () => {
@@ -267,14 +278,15 @@ export function useVoiceInput({
       }, INTERIM_SECONDS * 1000);
     } catch (err) {
       if (!cancelledRef.current) {
-        setError(
+        fail(
+          "start",
           err instanceof Error ? err.message : "could not start recording",
         );
       }
     } finally {
       startingRef.current = false;
     }
-  }, [clearInterimTimer, transcribeInterim]);
+  }, [clearInterimTimer, fail, transcribeInterim]);
 
   const stopAndTranscribe = useCallback(async () => {
     clearInterimTimer();
@@ -295,8 +307,11 @@ export function useVoiceInput({
       onTextRef.current(text);
     } catch (err) {
       if (!cancelledRef.current) {
-        setError(
-          err instanceof Error ? err.message : "transcription failed",
+        fail(
+          "final",
+          finalVoiceError(
+            err instanceof Error ? err.message : "transcription failed",
+          ),
         );
       }
     } finally {
@@ -305,7 +320,7 @@ export function useVoiceInput({
         setTranscribing(false);
       }
     }
-  }, [clearInterimTimer, postWav, stopTracks]);
+  }, [clearInterimTimer, fail, postWav, stopTracks]);
 
   const toggle = useCallback(() => {
     if (transcribingRef.current || startingRef.current) {

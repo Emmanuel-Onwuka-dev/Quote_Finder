@@ -63,6 +63,29 @@ export function appendTranscriptChunk(
   return previous ? `${previous} ${chunk}` : chunk;
 }
 
+/** Voice error stages: starting the mic, one live interim chunk, or the
+ * final transcription on stop. */
+export type VoiceErrorStage = "start" | "interim" | "final";
+
+/** Interim chunks fail quietly — a silent chunk is normal while
+ * dictating — while start and final failures surface to the user. */
+export function shouldShowVoiceError(stage: VoiceErrorStage): boolean {
+  return stage !== "interim";
+}
+
+/** Friendly final message when nothing audible was recorded. Matches
+ * the server's "transcription returned no text" and this client's
+ * "the server sent back no text"; anything else passes through. */
+export function finalVoiceError(message: string): string {
+  if (
+    message === "transcription returned no text" ||
+    message === "the server sent back no text"
+  ) {
+    return "We didn't hear any speech. Try again.";
+  }
+  return message;
+}
+
 /** Linear-interpolation resample to `toRate`. Already-correct audio is
  * returned unchanged in content (as a copy). */
 export function resampleLinear(

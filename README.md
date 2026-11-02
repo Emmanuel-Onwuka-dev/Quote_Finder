@@ -30,7 +30,8 @@ this version does not depend on that answer.
   through the Meta Model API.
 - Optional: Muse Image quote cards, Muse Glimmer query rephrasing
   (off on the hosted version: it needs a local Glimmer server reachable
-  at OPEN_MODEL_URL).
+  at OPEN_MODEL_URL). Glimmer's model name comes from OPEN_MODEL_NAME
+  (default glimmer).
 - Coding agent: built with **Muse Code**.
 
 ## Original work (built during the hackathon)
@@ -69,11 +70,27 @@ this version does not depend on that answer.
   states, and endpoint plus audio unit tests.
 - P5: Glimmer variant integration — optional second-model rephrasings
   from `OPEN_MODEL_URL` appended to the Spark variants, never fatal.
-  Off on the hosted version: it needs a local Glimmer server reachable
-  at OPEN_MODEL_URL.
+  Glimmer takes one of the three search slots, with a 5-second timeout;
+  the model name comes from OPEN_MODEL_NAME. Off on the hosted version:
+  it needs a local Glimmer server reachable at OPEN_MODEL_URL.
 - P5: Image quote cards — `POST /api/quote-card` renders a shareable
   card for each found result, shown in the result card, hidden on
   failure.
+- P6: result card sharing — Share button (browser share sheet, copy
+  fallback) on found results, Download card button, and share text
+  marking the remembered line as not verified.
+- P7: creator archive share link — video title and link only; caption
+  text is never shared.
+- P8: voice input errors — silent interim chunks, plain "We didn't hear
+  any speech" message on stop, and start and final errors still shown.
+- P9: fallback reliability — nullable and clock-string fields accepted
+  from the model, empty or non-web URLs skipped before fetch.
+- P10: server error logging with step names and redaction; Sentry
+  alerts when SENTRY_DSN is set.
+- P11: honest no-result when the search quota is spent and nothing
+  verifies, plus plain-language notes.
+- P12: quote-card daily cap of 500 per process, with the AI-generated
+  label.
 
 ## External services and libraries
 
@@ -102,3 +119,8 @@ Heavy testing day? Raise the daily search quota for the server session
 ```powershell
 $env:SEARCH_BUDGET_UNITS="10000"   # same terminal, before npm run dev:server
 ```
+
+Errors are logged to the server console with the step name. If
+SENTRY_DSN is set, they are also sent to Sentry, with request bodies,
+headers, cookies, query strings, and keys removed. Leave SENTRY_DSN
+empty to turn this off.

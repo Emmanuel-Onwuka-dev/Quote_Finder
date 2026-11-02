@@ -348,7 +348,7 @@ Expose the hook as `{ recording, transcribing, error, toggle }`. It also exposes
   - Square icon while recording
   - Spinner while transcribing
   - Destructive color while recording
-- Input placeholder: "The line you remember — or say it out loud"
+- Input placeholder: "What was the video about? — or say it out loud"
 - Status text:
   - "Listening… tap the square when you're done."
   - "Writing down what you said…"
@@ -372,7 +372,7 @@ Expose the hook as `{ recording, transcribing, error, toggle }`. It also exposes
 - **Quote row:** quote input with the microphone button, and a creator input.
 - **Scene field:** a two-row textarea with the prompt "e.g. interview about his first job, podcast, cooking show". The scene is a text hint for ranking only. The model does not see the video.
 - **Time window pills:** Any time · 24 hours · 7 days · 30 days · 2 months · 6 months · 1 year, plus a custom-days number input.
-- **Helper text:** "Say it however you remember it — the wording doesn't have to be right."
+- **Helper text:** "Describe the video in your own words — the exact wording doesn't have to be right."
 
 ### 10.3 Result card (found)
 

@@ -123,12 +123,11 @@ export default function App() {
             </h1>
           </div>
           <p className="mt-3 text-lg text-muted">
-            Say it however you remember it — the wording doesn&apos;t have to
-            be right.
+            Know roughly what a video was about? Find it.
           </p>
           <p className="mt-2">
             <a href="/creator" className="text-sm text-accent underline">
-              For creators: connect your channel
+              Find the moment you said it, in your own videos.
             </a>
           </p>
         </header>
@@ -136,7 +135,7 @@ export default function App() {
         <main className="flex-1 pb-8">
           {turns.length === 0 ? (
             <p className="text-muted">
-              No searches yet — try a line you remember.
+              No searches yet — try describing a video.
             </p>
           ) : (
             <ol className="space-y-6">

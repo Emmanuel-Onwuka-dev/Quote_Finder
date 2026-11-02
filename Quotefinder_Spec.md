@@ -348,7 +348,7 @@ Expose the hook as `{ recording, transcribing, error, toggle }`. It also exposes
   - Square icon while recording
   - Spinner while transcribing
   - Destructive color while recording
-- Input placeholder: "What was the video about? Or say it out loud"
+- Input placeholder: "The line you remember, or say it out loud"
 - Status text:
   - "Listening… tap the square when you're done."
   - "Writing down what you said…"

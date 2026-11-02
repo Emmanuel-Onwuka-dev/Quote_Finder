@@ -17,7 +17,7 @@ export interface QuoteCardDeps {
   now?: () => Date;
 }
 
-/** Longest sentence accepted: it is only a mood hint for the background. */
+/** Longest sentence accepted: only its mood reaches the image model. */
 export const QUOTE_CARD_MAX_SENTENCE = 500;
 /** §7.7 daily call budget: at most this many paid Meta calls per UTC day. */
 export const QUOTE_CARD_DAILY_CALL_LIMIT = 500;
@@ -45,10 +45,79 @@ const GenerationsSchema = z.object({
     .min(1),
 });
 
+/** Background mood from sentence keywords, checked in order. Whole
+ * words only, so "running" never matches "run". Pure and total: any
+ * sentence without a keyword gets the calm default. */
+export function moodFor(sentence: string): string {
+  const moods: Array<{ mood: string; keywords: string[] }> = [
+    {
+      mood: "tense and dramatic",
+      keywords: [
+        "fight",
+        "run",
+        "danger",
+        "afraid",
+        "fear",
+        "war",
+        "chase",
+        "escape",
+      ],
+    },
+    {
+      mood: "quiet and melancholy",
+      keywords: [
+        "miss",
+        "gone",
+        "lost",
+        "alone",
+        "goodbye",
+        "tears",
+        "cry",
+        "grief",
+        "sorry",
+      ],
+    },
+    {
+      mood: "warm and joyful",
+      keywords: [
+        "love",
+        "happy",
+        "joy",
+        "laugh",
+        "smile",
+        "dance",
+        "celebrate",
+        "friend",
+      ],
+    },
+    {
+      mood: "hopeful and serene",
+      keywords: [
+        "hope",
+        "pray",
+        "grace",
+        "faith",
+        "light",
+        "peace",
+        "dawn",
+        "believe",
+      ],
+    },
+  ];
+  for (const { mood, keywords } of moods) {
+    for (const keyword of keywords) {
+      if (new RegExp(`\\b${keyword}\\b`).test(sentence.toLowerCase())) {
+        return mood;
+      }
+    }
+  }
+  return "calm and thoughtful";
+}
+
 function cardPrompt(sentence: string): string {
   return (
     "An abstract, atmospheric background with soft light and texture " +
-    `that evokes the mood of this sentence: ${sentence}. ` +
+    `that feels ${moodFor(sentence)}. ` +
     "No text, no letters, no words, no numbers, no symbols, no people, " +
     "no faces. Landscape composition with calm open space in the centre."
   );

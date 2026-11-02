@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import {
   createQuoteCardHandler,
+  moodFor,
   QUOTE_CARD_DAILY_CALL_LIMIT,
   QUOTE_CARD_MAX_SENTENCE,
   type QuoteCardDeps,
@@ -59,7 +60,7 @@ async function postCard(app: Hono, body: unknown): Promise<Response> {
 }
 
 describe("POST /api/quote-card", () => {
-  it("forwards the sentence and returns the image URL", async () => {
+  it("forwards the mood and returns the image URL", async () => {
     const { app, seen } = setup();
     const res = await postCard(app, { sentence: "never give up" });
     expect(res.status).toBe(200);
@@ -80,7 +81,8 @@ describe("POST /api/quote-card", () => {
       n: number;
     };
     expect(forwarded.model).toBe("test-image");
-    expect(forwarded.prompt).toContain("never give up");
+    expect(forwarded.prompt).toContain("calm and thoughtful");
+    expect(forwarded.prompt).not.toContain("never give up");
     expect(forwarded.size).toBe("1792x1024");
     expect(forwarded.n).toBe(1);
   });
@@ -93,9 +95,21 @@ describe("POST /api/quote-card", () => {
       prompt: string;
     };
     expect(forwarded.prompt).toContain("No text");
-    expect(forwarded.prompt).toContain("never give up");
+    expect(forwarded.prompt).toContain("calm and thoughtful");
+    expect(forwarded.prompt).not.toContain("never give up");
     expect(forwarded.prompt).not.toContain("Design an elegant");
     expect(forwarded.prompt).not.toContain("Display this exact text");
+  });
+
+  it("sends the mood word for the sentence, never the sentence", async () => {
+    const { app, seen } = setup();
+    const res = await postCard(app, { sentence: "we danced with joy" });
+    expect(res.status).toBe(200);
+    const forwarded = JSON.parse(String(seen[0]?.init.body)) as {
+      prompt: string;
+    };
+    expect(forwarded.prompt).toContain("warm and joyful");
+    expect(forwarded.prompt).not.toContain("we danced with joy");
   });
 
   it("builds a data URL from b64_json", async () => {
@@ -178,6 +192,21 @@ describe("POST /api/quote-card", () => {
         message: "quote card returned no image",
       });
     }
+  });
+});
+
+describe("moodFor", () => {
+  it("returns the first mood whose keywords match", () => {
+    expect(moodFor("run from the danger")).toBe("tense and dramatic");
+    expect(moodFor("I miss you, goodbye")).toBe("quiet and melancholy");
+    expect(moodFor("we laughed with joy")).toBe("warm and joyful");
+    expect(moodFor("hope at dawn")).toBe("hopeful and serene");
+    expect(moodFor("never give up")).toBe("calm and thoughtful");
+  });
+
+  it("matches whole words only", () => {
+    expect(moodFor("running wild")).toBe("calm and thoughtful");
+    expect(moodFor("RUN FOR YOUR LIFE")).toBe("tense and dramatic");
   });
 });
 

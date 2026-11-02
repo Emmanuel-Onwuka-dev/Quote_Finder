@@ -13,14 +13,11 @@ interface ResultCardProps {
 const CARD_WIDTH = 1600;
 const CARD_HEIGHT = 900;
 
-/** Read a theme color from the page, with a fallback when it is unset. */
-function themeColor(name: string, fallback: string): string {
-  return (
-    getComputedStyle(document.documentElement)
-      .getPropertyValue(name)
-      .trim() || fallback
-  );
-}
+/** Card text colors. These match the app palette (light text and muted)
+ * in index.css, fixed here so the exported image never depends on the
+ * page state. */
+const CARD_LIGHT_TEXT = "#fffaf3";
+const CARD_MUTED_TEXT = "#6f6557";
 
 /** Load the AI background so it can be drawn without tainting the
  * canvas. Rejects when the image cannot be used. */
@@ -64,7 +61,7 @@ function drawCard(background: HTMLImageElement, sentence: string): string {
   ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
   const lines = wrapSentence(sentence, 34);
   const size = cardTextSize(lines.length);
-  ctx.fillStyle = themeColor("--foreground", "#fffaf3");
+  ctx.fillStyle = CARD_LIGHT_TEXT;
   ctx.font = `${size}px "Space Grotesk", sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -75,7 +72,7 @@ function drawCard(background: HTMLImageElement, sentence: string): string {
     ctx.fillText(line, CARD_WIDTH / 2, firstBaseline + index * lineHeight);
   });
   ctx.font = '22px "DM Sans", sans-serif';
-  ctx.fillStyle = themeColor("--muted", "#6f6557");
+  ctx.fillStyle = CARD_MUTED_TEXT;
   ctx.textBaseline = "alphabetic";
   ctx.textAlign = "left";
   ctx.fillText("Quotefinder", 48, CARD_HEIGHT - 48);
@@ -158,8 +155,7 @@ function QuoteCard({
             className="w-full rounded-xl border border-border"
           />
           <p className="text-sm text-muted">
-            AI-generated share card. The text may differ slightly from the
-            original.
+            AI-generated background. Quotefinder adds the sentence.
           </p>
         </>
       )}

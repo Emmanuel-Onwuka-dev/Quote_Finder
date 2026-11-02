@@ -204,6 +204,9 @@ export function CreatorPage() {
                 >
                   Disconnect and delete
                 </button>
+                <p className="text-xs text-muted">
+                  Captions are kept for 30 days, then deleted.
+                </p>
               </div>
             ))}
         </main>
@@ -272,8 +275,7 @@ function CreatorSearch({
         Step 2: Search for a line
       </h3>
       <p className="mt-2 text-muted">
-        Type or say a line as it was spoken in one of your videos. Only
-        videos listed as ready to search are checked.
+        Only indexed videos are searched.
       </p>
       <form
         onSubmit={(event) => {
@@ -286,7 +288,7 @@ function CreatorSearch({
           type="text"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder={`A line from ${channelTitle || "your channel"}? Or say it out loud`}
+          placeholder="Type a line you remember, or say it out loud"
           disabled={searching}
           className="w-full rounded-lg border border-border bg-background px-3 py-2 text-foreground placeholder:text-muted disabled:opacity-60"
         />
@@ -311,11 +313,7 @@ function CreatorSearch({
         </p>
       )}
       {matches !== null && matches.length === 0 && !searchError && (
-        <p className="mt-3 text-muted">
-          No match found. Check that the video is in 'Videos ready to
-          search', then try a shorter part of the line, such as three or
-          four words.
-        </p>
+        <p className="mt-3 text-muted">No match. Try fewer words from the line.</p>
       )}
       {matches !== null && matches.length > 0 && (
         <ol>
@@ -504,10 +502,7 @@ function CreatorIndexing({
         Step 1: Choose videos to search
       </h3>
       <p className="mt-2 text-muted">
-        Tick the videos you want to search, then press the button. We read
-        each video&apos;s captions so you can search for lines in them. This
-        can take a few minutes. Captions are kept for 30 days, then removed.
-        You can index a video again at any time.
+        Tick videos, then press Index. This takes a few minutes.
       </p>
       {videosError && (
         <p role="alert" className="mt-2 text-destructive">

@@ -99,7 +99,7 @@ export function Composer({
             type="text"
             value={quote}
             onChange={(e) => setQuote(e.target.value)}
-            placeholder="What was the video about? Or say it out loud"
+            placeholder="The line you remember, or say it out loud"
             required
             disabled={disabled}
             className={`${inputClass} flex-1`}

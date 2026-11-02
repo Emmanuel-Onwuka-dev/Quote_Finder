@@ -160,6 +160,7 @@ describe("searchEverywhere query variants", () => {
     await searchEverywhere({
       quote: "the quick brown fox",
       variants: ["a fast brown fox", "quick fox jumps"],
+      sinceDays: 0,
       apiKey: "test-key",
       onProgress: () => {},
     });
@@ -170,6 +171,158 @@ describe("searchEverywhere query variants", () => {
       "a fast brown fox",
       "quick fox jumps",
     ]);
+  });
+});
+
+describe("searchChannel query variants", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function stubChannel(routes: Record<string, unknown>, queries: string[]): void {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const parsed = new URL(url);
+        const q = parsed.searchParams.get("q");
+        if (q) {
+          queries.push(q);
+        }
+        return new Response(
+          JSON.stringify(
+            routes[parsed.pathname] ?? { items: [] },
+          ),
+          { status: 200 },
+        );
+      }),
+    );
+  }
+
+  const CHANNEL_ROUTE = {
+    items: [
+      {
+        id: "UCchan1",
+        snippet: { title: "Test Channel" },
+        contentDetails: { relatedPlaylists: { uploads: "UUchan1" } },
+      },
+    ],
+  };
+
+  it("sends the quote plus up to 3 variants as in-channel queries", async () => {
+    const queries: string[] = [];
+    stubChannel(
+      {
+        "/youtube/v3/channels": CHANNEL_ROUTE,
+        "/youtube/v3/playlistItems": { items: [] },
+        "/youtube/v3/search": { items: [] },
+      },
+      queries,
+    );
+    await searchChannel({
+      quote: "the quick brown fox",
+      variants: ["variant one", "variant two", "variant three", "variant four"],
+      creator: "@tester",
+      sinceDays: 0,
+      apiKey: "test-key",
+      onProgress: () => {},
+    });
+    expect(queries).toEqual([
+      "the quick brown fox",
+      "variant one",
+      "variant two",
+      "variant three",
+    ]);
+  });
+
+  it("keeps the variant queries when the upload index fails", async () => {
+    const queries: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const parsed = new URL(url);
+        if (parsed.pathname === "/youtube/v3/playlistItems") {
+          return new Response("error", { status: 500 });
+        }
+        const q = parsed.searchParams.get("q");
+        if (q) {
+          queries.push(q);
+        }
+        const routes: Record<string, unknown> = {
+          "/youtube/v3/channels": CHANNEL_ROUTE,
+          "/youtube/v3/search": { items: [] },
+        };
+        return new Response(
+          JSON.stringify(routes[parsed.pathname] ?? { items: [] }),
+          { status: 200 },
+        );
+      }),
+    );
+    await searchChannel({
+      quote: "the quick brown fox",
+      variants: ["variant one"],
+      creator: "@tester",
+      sinceDays: 0,
+      apiKey: "test-key",
+      onProgress: () => {},
+    });
+    expect(queries).toEqual(["the quick brown fox", "variant one"]);
+  });
+});
+
+describe("searchEverywhere time window", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("drops videos older than the window before merging", async () => {
+    const fresh = new Date(Date.now() - 86_400_000).toISOString();
+    const stale = new Date(Date.now() - 30 * 86_400_000).toISOString();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = new URL(url).pathname;
+        const routes: Record<string, unknown> = {
+          "/youtube/v3/search": {
+            items: [{ id: { videoId: "vidFresh" } }, { id: { videoId: "vidStale" } }],
+          },
+          "/youtube/v3/videos": {
+            items: [
+              {
+                id: "vidFresh",
+                snippet: {
+                  title: "Fresh upload",
+                  description: "",
+                  publishedAt: fresh,
+                  channelTitle: "Fresh Channel",
+                },
+              },
+              {
+                id: "vidStale",
+                snippet: {
+                  title: "Stale upload",
+                  description: "",
+                  publishedAt: stale,
+                  channelTitle: "Stale Channel",
+                },
+              },
+            ],
+          },
+        };
+        return new Response(
+          JSON.stringify(routes[path] ?? { items: [] }),
+          { status: 200 },
+        );
+      }),
+    );
+    const result = await searchEverywhere({
+      quote: "anything",
+      variants: [],
+      sinceDays: 7,
+      apiKey: "test-key",
+      onProgress: () => {},
+    });
+    expect(result.shortlist.map((video) => video.id)).toEqual(["vidFresh"]);
+    expect(result.scanned).toBe(1);
   });
 });
 
@@ -210,6 +363,7 @@ describe("search result channel titles", () => {
     const result = await searchEverywhere({
       quote: "anything",
       variants: [],
+      sinceDays: 0,
       apiKey: "test-key",
       onProgress: () => {},
     });
@@ -354,6 +508,7 @@ describe("API call reporting", () => {
     await searchEverywhere({
       quote: "anything",
       variants: ["variant one", "variant two"],
+      sinceDays: 0,
       apiKey: "test-key",
       onProgress: () => {},
       reserveQuota: (endpoint) => calls.push(endpoint),
@@ -472,6 +627,7 @@ describe("API call reporting", () => {
       searchEverywhere({
         quote: "anything",
         variants: [],
+        sinceDays: 0,
         apiKey: "test-key",
         onProgress: () => {},
         reserveQuota: (endpoint) => {

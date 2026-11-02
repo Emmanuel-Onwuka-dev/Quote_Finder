@@ -499,6 +499,7 @@ export async function searchChannel(
 export interface EverywhereSearchInput {
   quote: string;
   variants: string[];
+  sinceDays: number;
   apiKey: string;
   onProgress: ProgressFn;
   reserveQuota?: QuotaReserve;
@@ -507,9 +508,11 @@ export interface EverywhereSearchInput {
 export async function searchEverywhere(
   input: EverywhereSearchInput,
 ): Promise<EngineOutput> {
-  const { quote, variants, apiKey, onProgress, reserveQuota } = input;
+  const { quote, variants, sinceDays, apiKey, onProgress, reserveQuota } =
+    input;
   const counter = { scanned: 0 };
   onProgress("Indexing uploads", "searching all of YouTube");
+  const publishedAfter = toPublishedAfter(sinceDays);
   const quoted = await searchVideos(`"${quote}"`, apiKey, undefined, 12, reserveQuota);
   const bare = await searchVideos(quote, apiKey, undefined, 12, reserveQuota);
   const extra: VideoMeta[] = [];
@@ -518,7 +521,12 @@ export async function searchEverywhere(
       ...(await searchVideos(variant, apiKey, undefined, 8, reserveQuota)),
     );
   }
-  const shortlist = mergeShortlist(quoted, [...bare, ...extra]);
+  // §7.6: the time window filters this path like the channel index —
+  // filter before merging so the pool stays full of fresh videos.
+  const shortlist = mergeShortlist(
+    filterAfter(quoted, publishedAfter),
+    filterAfter([...bare, ...extra], publishedAfter),
+  );
   const hits = scorePool(quote, shortlist, onProgress, counter);
   return {
     shortlist,

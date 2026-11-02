@@ -140,6 +140,8 @@ Before any search, ask `TEXT_MODEL` for 3 to 5 alternative wordings of the quote
 2. Deduplicate and build a pool of 12.
 3. Score the pool the same way as above.
 
+If a time window is set, keep only videos published after the cutoff (§7.6).
+
 This path finds videos whose title or description matches the line. It cannot find a line that is spoken but not written in the title or description.
 
 ### 5.5 Fuzzy matching

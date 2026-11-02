@@ -642,6 +642,7 @@ export async function locateQuote(
         : await searchEverywhere({
             quote,
             variants: allVariants,
+            sinceDays: input.sinceDays,
             apiKey: youtubeApiKey,
             onProgress,
             reserveQuota: reserveSearchQuota,
@@ -805,7 +806,11 @@ export async function locateQuote(
       });
     }
   });
-  const dropped = fallback.candidates.length - kept.length;
+  // Empty URLs never had a link to open, so they are not "dropped links".
+  const verifiable = fallback.candidates.filter(
+    (candidate) => (candidate.url || "").length > 0,
+  ).length;
+  const dropped = verifiable - kept.length;
   const candidates = padCandidates(engine, kept);
 
   const notes = [

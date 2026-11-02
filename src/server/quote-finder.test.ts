@@ -930,6 +930,138 @@ describe("locateQuote", () => {
     expect(state.metaQueue).toHaveLength(0);
   });
 
+  it("skips ranking when the shortlist is empty", async () => {
+    const state = setup([
+      { status: 200, body: chatBody(VARIANTS_REPLY) },
+      {
+        status: 200,
+        body: chatBody(fallbackReply({ found: false, notes: "from memory" })),
+      },
+    ]);
+    const healthyFetch = fetch;
+    vi.stubGlobal(
+      "fetch",
+      (async (url: string | URL | Request, init?: { method?: string }) => {
+        const href = String(url);
+        if (
+          href.includes("/youtube/v3/playlistItems") ||
+          href.includes("/youtube/v3/search") ||
+          href.includes("/youtube/v3/videos")
+        ) {
+          return jsonResponse({ items: [] });
+        }
+        return healthyFetch(url, init);
+      }) as unknown as typeof fetch,
+    );
+    const result = await locateQuote(
+      {
+        quote: "xylophone zephyr nebula",
+        creator: "@tester",
+        scene: "",
+        sinceDays: 0,
+      },
+      { llm: TEST_LLM, youtubeApiKey: "yt-key", fetchFn: fetch },
+    );
+    expect(result.found).toBe(false);
+    expect(result.engine.scanned).toBe(0);
+    expect(result.candidates).toEqual([]);
+    expect(result.notes).toContain("from memory");
+    expect(result.notes).toContain("No verified links were found.");
+    expect(state.metaQueue).toHaveLength(0);
+  });
+
+  it("shows a confident memory answer when the YouTube search fails", async () => {
+    const state = setup([
+      { status: 200, body: chatBody(VARIANTS_REPLY) },
+      {
+        status: 200,
+        body: chatBody(
+          fallbackReply({
+            found: true,
+            confidence: "high",
+            videoUrl: youtubeWatchUrl("found9"),
+            videoTitle: "Found from memory",
+            publishedAt: "2026-09-15",
+            startTime: 90,
+            context: "the creator said it here",
+            candidates: [],
+          }),
+        ),
+      },
+    ]);
+    const healthyFetch = fetch;
+    vi.stubGlobal(
+      "fetch",
+      (async (url: string | URL | Request, init?: { method?: string }) =>
+        String(url).includes("googleapis.com")
+          ? jsonResponse({}, 500)
+          : healthyFetch(url, init)) as unknown as typeof fetch,
+    );
+    const result = await locateQuote(
+      {
+        quote: "xylophone zephyr nebula",
+        creator: "@tester",
+        scene: "",
+        sinceDays: 0,
+      },
+      { llm: TEST_LLM, youtubeApiKey: "yt-key", fetchFn: healthyFetch },
+    );
+    expect(result.found).toBe(true);
+    expect(result.videoUrl).toBe(youtubeWatchUrl("found9"));
+    expect(result.confidence).toBe("medium");
+    expect(result.startTime).toBe(90);
+    expect(result.startEstimate).toBe(true);
+    expect(result.candidates).toEqual([]);
+    expect(
+      result.notes.some((note) => note.includes("video search failed")),
+    ).toBe(true);
+    expect(
+      result.notes.some((note) => note.includes("estimate from memory")),
+    ).toBe(true);
+    expect(state.metaQueue).toHaveLength(0);
+  });
+
+  it("excludes empty URLs from the dropped-links tally", async () => {
+    setup([
+      { status: 200, body: chatBody(VARIANTS_REPLY) },
+      { status: 200, body: chatBody(RANK_VID1_REPLY) },
+      {
+        status: 200,
+        body: chatBody(
+          fallbackReply({
+            found: false,
+            candidates: [
+              { url: "", title: "No link", reason: "empty" },
+              {
+                url: youtubeWatchUrl("vid2"),
+                title: "Cooking pasta",
+                reason: "Title match",
+              },
+              {
+                url: youtubeWatchUrl("dead7"),
+                title: "Gone",
+                reason: "stale",
+              },
+            ],
+          }),
+        ),
+      },
+    ]);
+    const result = await locateQuote(
+      {
+        quote: "xylophone zephyr nebula",
+        creator: "@tester",
+        scene: "",
+        sinceDays: 0,
+      },
+      { llm: TEST_LLM, youtubeApiKey: "yt-key", fetchFn: fetch },
+    );
+    expect(result.notes).toContain("Removed 1 link that did not open.");
+    expect(result.candidates.every((candidate) => candidate.url !== "")).toBe(
+      true,
+    );
+  });
+
   it("rejects an empty quote", async () => {
     setup();
     await expect(

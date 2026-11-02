@@ -1,6 +1,7 @@
 // §7.7 Muse Image quote card: POST endpoint. Accepts the found
-// sentence, asks the Meta image API for a shareable card, and returns
-// an image URL. The result card hides itself on any failure, so this
+// sentence, asks the Meta image API for a text-free background, and
+// returns an image URL. The app draws the exact sentence on top in
+// the browser. The result card hides itself on any failure, so this
 // is single-attempt by design: no retries.
 
 import { z } from "zod";
@@ -16,7 +17,7 @@ export interface QuoteCardDeps {
   now?: () => Date;
 }
 
-/** Longest sentence accepted: image prompts carry the exact words. */
+/** Longest sentence accepted: it is only a mood hint for the background. */
 export const QUOTE_CARD_MAX_SENTENCE = 500;
 /** §7.7 daily call budget: at most this many paid Meta calls per UTC day. */
 export const QUOTE_CARD_DAILY_CALL_LIMIT = 500;
@@ -45,11 +46,12 @@ const GenerationsSchema = z.object({
 });
 
 function cardPrompt(sentence: string): string {
-  return [
-    "Design an elegant minimal shareable quote card.",
-    `Display this exact text prominently, word for word, with no other words: "${sentence}"`,
-    "Clean typography on a calm background.",
-  ].join(" ");
+  return (
+    "An abstract, atmospheric background with soft light and texture " +
+    `that evokes the mood of this sentence: ${sentence}. ` +
+    "No text, no letters, no words, no numbers, no symbols, no people, " +
+    "no faces. Landscape composition with calm open space in the centre."
+  );
 }
 
 export function createQuoteCardHandler(deps: QuoteCardDeps) {

@@ -85,6 +85,19 @@ describe("POST /api/quote-card", () => {
     expect(forwarded.n).toBe(1);
   });
 
+  it("asks for a text-free background with the sentence as a mood hint", async () => {
+    const { app, seen } = setup();
+    const res = await postCard(app, { sentence: "never give up" });
+    expect(res.status).toBe(200);
+    const forwarded = JSON.parse(String(seen[0]?.init.body)) as {
+      prompt: string;
+    };
+    expect(forwarded.prompt).toContain("No text");
+    expect(forwarded.prompt).toContain("never give up");
+    expect(forwarded.prompt).not.toContain("Design an elegant");
+    expect(forwarded.prompt).not.toContain("Display this exact text");
+  });
+
   it("builds a data URL from b64_json", async () => {
     const { app } = setup([
       { status: 200, body: { data: [{ b64_json: "aGVsbG8=" }] } },

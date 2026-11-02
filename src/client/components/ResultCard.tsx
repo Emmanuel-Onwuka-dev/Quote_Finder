@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { LocateResult } from "../hooks/useQuoteStream";
+import { cardTextSize, wrapSentence } from "../lib/card";
 import { formatDate, videoIdFromUrl, youtubeEmbedUrl } from "../lib/format";
 import { cardActions, shareText } from "../lib/share";
 
@@ -8,9 +9,87 @@ interface ResultCardProps {
   timeWindow: string;
 }
 
+/** Composed card size: 16:9, sized for link unfurls. */
+const CARD_WIDTH = 1600;
+const CARD_HEIGHT = 900;
+
+/** Read a theme color from the page, with a fallback when it is unset. */
+function themeColor(name: string, fallback: string): string {
+  return (
+    getComputedStyle(document.documentElement)
+      .getPropertyValue(name)
+      .trim() || fallback
+  );
+}
+
+/** Load the AI background so it can be drawn without tainting the
+ * canvas. Rejects when the image cannot be used. */
+function loadBackground(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("background failed to load"));
+    img.src = url;
+  });
+}
+
+/** Draw the background cover-fit, a dark readable overlay, the exact
+ * sentence centred, and the footer line. Returns a PNG data URL. */
+function drawCard(background: HTMLImageElement, sentence: string): string {
+  const canvas = document.createElement("canvas");
+  canvas.width = CARD_WIDTH;
+  canvas.height = CARD_HEIGHT;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("canvas 2d unavailable");
+  }
+  const scale = Math.max(
+    CARD_WIDTH / background.naturalWidth,
+    CARD_HEIGHT / background.naturalHeight,
+  );
+  const drawnWidth = background.naturalWidth * scale;
+  const drawnHeight = background.naturalHeight * scale;
+  ctx.drawImage(
+    background,
+    (CARD_WIDTH - drawnWidth) / 2,
+    (CARD_HEIGHT - drawnHeight) / 2,
+    drawnWidth,
+    drawnHeight,
+  );
+  const shade = ctx.createLinearGradient(0, 0, 0, CARD_HEIGHT);
+  shade.addColorStop(0, "rgba(0, 0, 0, 0.45)");
+  shade.addColorStop(1, "rgba(0, 0, 0, 0.72)");
+  ctx.fillStyle = shade;
+  ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
+  const lines = wrapSentence(sentence, 34);
+  const size = cardTextSize(lines.length);
+  ctx.fillStyle = themeColor("--foreground", "#fffaf3");
+  ctx.font = `${size}px "Space Grotesk", sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const lineHeight = size * 1.25;
+  const firstBaseline =
+    CARD_HEIGHT / 2 - ((lines.length - 1) * lineHeight) / 2;
+  lines.forEach((line, index) => {
+    ctx.fillText(line, CARD_WIDTH / 2, firstBaseline + index * lineHeight);
+  });
+  ctx.font = '22px "DM Sans", sans-serif';
+  ctx.fillStyle = themeColor("--muted", "#6f6557");
+  ctx.textBaseline = "alphabetic";
+  ctx.textAlign = "left";
+  ctx.fillText("Quotefinder", 48, CARD_HEIGHT - 48);
+  ctx.textAlign = "right";
+  ctx.fillText("AI-generated background", CARD_WIDTH - 48, CARD_HEIGHT - 48);
+  return canvas.toDataURL("image/png");
+}
+
 /** Shareable quote card (§7.7): fetched lazily after the result
- * renders, hidden entirely when the call fails. Reports the loaded URL
- * (or null) so the parent can offer download and image sharing. */
+ * renders. The server returns an AI background only; the exact
+ * sentence is drawn on top here, so the wording never changes.
+ * Hidden entirely when the background call or the drawing fails.
+ * Reports the composed image (or null) so the parent can offer
+ * download and image sharing. */
 function QuoteCard({
   sentence,
   onImage,
@@ -26,21 +105,25 @@ function QuoteCard({
     setLoading(true);
     setImageUrl(null);
     onImage(null);
-    fetch("/api/quote-card", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sentence }),
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          throw new Error(`status ${res.status}`);
-        }
-        const data = (await res.json()) as { imageUrl?: string };
-        if (typeof data.imageUrl !== "string" || !data.imageUrl) {
-          throw new Error("no image in response");
-        }
-        return data.imageUrl;
-      })
+    const compose = async (): Promise<string> => {
+      const res = await fetch("/api/quote-card", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sentence }),
+      });
+      if (!res.ok) {
+        throw new Error(`status ${res.status}`);
+      }
+      const data = (await res.json()) as { imageUrl?: string };
+      if (typeof data.imageUrl !== "string" || !data.imageUrl) {
+        throw new Error("no image in response");
+      }
+      const background = await loadBackground(data.imageUrl);
+      // Wait for the app fonts before drawing text with them.
+      await document.fonts.ready;
+      return drawCard(background, sentence);
+    };
+    compose()
       .then((url) => {
         if (!cancelled) {
           setImageUrl(url);

@@ -1,7 +1,7 @@
-// Shared daily call budget for paid Meta calls: one counter per
-// handler, keyed by UTC date. The counter is kept in memory: it
-// resets on server restart and is per process, so this is a cost
-// guard, not a security control. Unit tested in daily-budget.test.ts.
+// Daily call budget for paid Meta calls: one counter per handler,
+// in memory, per process, keyed by UTC date. It resets on server
+// restart, so this is a cost guard, not a security control.
+// Unit tested in daily-budget.test.ts.
 
 export interface DailyCallBudget {
   /** True (and counted) while calls remain under the limit. */

@@ -190,10 +190,7 @@ export function CreatorPage() {
                   capUnits={status?.budget.capUnits ?? 0}
                   onDone={load}
                 />
-                <CreatorSearch
-                  channelId={creator.channelId}
-                  channelTitle={creator.channelTitle}
-                />
+                <CreatorSearch channelId={creator.channelId} />
                 <button
                   type="button"
                   onClick={() =>
@@ -217,10 +214,8 @@ export function CreatorPage() {
 
 function CreatorSearch({
   channelId,
-  channelTitle,
 }: {
   channelId: string;
-  channelTitle: string;
 }) {
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<CreatorArchiveMatch[] | null>(null);

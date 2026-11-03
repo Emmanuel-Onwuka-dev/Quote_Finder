@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { LocateResult } from "../hooks/useQuoteStream";
 import { cardTextSize, wrapSentence } from "../lib/card";
-import { formatDate, videoIdFromUrl, youtubeEmbedUrl } from "../lib/format";
+import {
+  formatDate,
+  formatStamp,
+  videoIdFromUrl,
+  youtubeEmbedUrl,
+} from "../lib/format";
 import { cardActions, shareText } from "../lib/share";
 
 interface ResultCardProps {
@@ -166,13 +171,71 @@ function QuoteCard({
 const actionButton =
   "rounded-lg border border-border px-4 py-2 font-medium text-foreground";
 
+/** Shown on the main card and on every other match. */
+const VERIFICATION_NOTE =
+  "The exact moment this line is said has not been verified.";
+
+interface OtherMatch {
+  key: string;
+  title: string;
+  creator: string;
+  /** Null selects the original main result. */
+  index: number | null;
+}
+
 export function ResultCard({ result, timeWindow }: ResultCardProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [copied, setCopied] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [cardImage, setCardImage] = useState<string | null>(null);
-  const videoId = videoIdFromUrl(result.videoUrl);
-  const published = formatDate(result.publishedAt);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const candidates = result.candidates;
+  const selected =
+    selectedIndex === null ? null : (candidates[selectedIndex] ?? null);
+  const main: LocateResult =
+    selected === null
+      ? result
+      : {
+          ...result,
+          videoTitle: selected.title,
+          videoUrl: selected.url,
+          creator: selected.creator || result.creator,
+          context: selected.reason ? [selected.reason] : result.context,
+        };
+  const others: OtherMatch[] = [];
+  if (selected === null) {
+    candidates.slice(0, 4).forEach((candidate, index) => {
+      others.push({
+        key: `${index}-${candidate.url}`,
+        title: candidate.title,
+        creator: candidate.creator,
+        index,
+      });
+    });
+  } else {
+    others.push({
+      key: `main-${result.videoUrl}`,
+      title: result.videoTitle,
+      creator: result.creator,
+      index: null,
+    });
+    candidates.forEach((candidate, index) => {
+      if (index !== selectedIndex && others.length < 4) {
+        others.push({
+          key: `${index}-${candidate.url}`,
+          title: candidate.title,
+          creator: candidate.creator,
+          index,
+        });
+      }
+    });
+  }
+  const videoId = videoIdFromUrl(main.videoUrl);
+  const published = formatDate(main.publishedAt);
+  const stamp = formatStamp(result.startTime);
+  const stampLabel = result.startEstimate
+    ? `your estimate: ${stamp}`
+    : `starts at ${stamp}`;
   const actions = cardActions(result, cardImage !== null);
 
   useEffect(() => {
@@ -193,7 +256,7 @@ export function ResultCard({ result, timeWindow }: ResultCardProps) {
 
   const copyLink = async () => {
     try {
-      await navigator.clipboard.writeText(result.videoUrl);
+      await navigator.clipboard.writeText(main.videoUrl);
       setCopied(true);
     } catch {
       // Clipboard unavailable; leave the button unchanged.
@@ -228,7 +291,7 @@ export function ResultCard({ result, timeWindow }: ResultCardProps) {
   const copyShareText = async () => {
     try {
       await navigator.clipboard.writeText(
-        shareText(result.fullSentence, result.videoUrl),
+        shareText(result.fullSentence, main.videoUrl),
       );
       setShareCopied(true);
     } catch {
@@ -237,7 +300,7 @@ export function ResultCard({ result, timeWindow }: ResultCardProps) {
   };
 
   const shareResult = async () => {
-    const text = shareText(result.fullSentence, result.videoUrl);
+    const text = shareText(result.fullSentence, main.videoUrl);
     if (typeof navigator.share !== "function") {
       await copyShareText();
       return;
@@ -262,8 +325,8 @@ export function ResultCard({ result, timeWindow }: ResultCardProps) {
       }
       await navigator.share(
         files
-          ? { title: "Quotefinder", text, url: result.videoUrl, files }
-          : { title: "Quotefinder", text, url: result.videoUrl },
+          ? { title: "Quotefinder", text, url: main.videoUrl, files }
+          : { title: "Quotefinder", text, url: main.videoUrl },
       );
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
@@ -285,14 +348,14 @@ export function ResultCard({ result, timeWindow }: ResultCardProps) {
         </span>
       )}
       <p className="mt-3 font-mono text-sm text-muted">
-        {result.creator || "Unknown creator"} · {timeWindow}
+        {main.creator || "Unknown creator"} · {timeWindow}
       </p>
       <h3
         ref={headingRef}
         tabIndex={-1}
         className="mt-2 font-display text-2xl font-bold"
       >
-        {result.videoTitle}
+        {main.videoTitle}
       </h3>
       {published && (
         <p className="mt-1 font-mono text-sm text-muted">{published}</p>
@@ -301,9 +364,9 @@ export function ResultCard({ result, timeWindow }: ResultCardProps) {
         {result.fullSentence}
       </blockquote>
       <p className="mt-4 rounded-lg border border-border p-3">
-        The exact moment this line is said has not been verified.
+        {VERIFICATION_NOTE}
       </p>
-      {result.context.map((line, index) => (
+      {main.context.map((line, index) => (
         <p key={`${index}-${line.slice(0, 24)}`} className="mt-3">
           {line}
         </p>
@@ -313,13 +376,45 @@ export function ResultCard({ result, timeWindow }: ResultCardProps) {
           <iframe
             className="aspect-video w-full rounded-xl border border-border"
             src={youtubeEmbedUrl(videoId)}
-            title={result.videoTitle || "Matched video"}
+            title={main.videoTitle || "Matched video"}
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
           />
           <p className="mt-2 font-mono text-sm text-muted">
             Video · starts at 0:00
           </p>
+        </div>
+      )}
+      {others.length > 0 && (
+        <div className="mt-4 border-t border-border pt-4">
+          <h3 className="font-display text-lg font-bold">Other matches</h3>
+          <ul className="mt-3 space-y-4">
+            {others.map((item) => {
+              const meta = [item.creator, published, stampLabel]
+                .filter(Boolean)
+                .join(" · ");
+              return (
+                <li
+                  key={item.key}
+                  className="border-t border-border pt-3 first:border-t-0 first:pt-0"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setSelectedIndex(item.index)}
+                    className="block w-full text-left"
+                  >
+                    <p className="font-medium">{item.title}</p>
+                    {meta && (
+                      <p className="mt-1 font-mono text-sm text-muted">{meta}</p>
+                    )}
+                    <p className="mt-1 text-sm text-muted">
+                      {VERIFICATION_NOTE}
+                    </p>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
       <div className="mt-4 flex flex-wrap gap-2">

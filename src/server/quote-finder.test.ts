@@ -5,6 +5,7 @@ import {
   locateQuote,
   queryVariants,
   rankShortlist,
+  selectRunnerUps,
   stamp,
   trustedCandidatesNote,
   urlExists,
@@ -230,6 +231,39 @@ describe("trustedCandidatesNote", () => {
     expect(trustedCandidatesNote(0)).toBe("No verified links were found.");
     expect(trustedCandidatesNote(1)).toBe("Only 1 verified link was found.");
     expect(trustedCandidatesNote(4)).toBe("Only 4 verified links were found.");
+  });
+});
+
+describe("selectRunnerUps", () => {
+  const main = youtubeWatchUrl("main");
+  const entry = (id: string) => ({
+    url: youtubeWatchUrl(id),
+    title: `Title ${id}`,
+    creator: "Channel",
+    reason: "Reason",
+  });
+
+  it("keeps rank order, drops the main video and repeats, caps at 4", () => {
+    const ranked = [
+      entry("main"),
+      entry("r1"),
+      entry("r2"),
+      entry("r1"),
+      entry("r3"),
+      entry("r4"),
+      entry("r5"),
+    ];
+    expect(selectRunnerUps(ranked, main).map((item) => item.url)).toEqual([
+      youtubeWatchUrl("r1"),
+      youtubeWatchUrl("r2"),
+      youtubeWatchUrl("r3"),
+      youtubeWatchUrl("r4"),
+    ]);
+  });
+
+  it("returns an empty list when only the main video is ranked", () => {
+    expect(selectRunnerUps([entry("main")], main)).toEqual([]);
+    expect(selectRunnerUps([], main)).toEqual([]);
   });
 });
 
@@ -675,6 +709,112 @@ describe("locateQuote", () => {
     expect(result.startTime).toBe(95);
     expect(result.startEstimate).toBe(true);
     expect(result.timestampVerified).toBe(false);
+  });
+
+  it("returns up to 4 runner-ups in rank order on a found result", async () => {
+    const aiCandidates = Array.from({ length: 6 }, (_, index) => ({
+      url: youtubeWatchUrl(`r${index + 1}`),
+      title: `Runner ${index + 1}`,
+      reason: "AI suggestion",
+    }));
+    setup([
+      { status: 200, body: chatBody(VARIANTS_REPLY) },
+      { status: 200, body: chatBody(RANK_VID1_REPLY) },
+      {
+        status: 200,
+        body: chatBody(
+          fallbackReply({
+            found: true,
+            confidence: "medium",
+            videoUrl: youtubeWatchUrl("rmain"),
+            videoTitle: "Remembered film",
+            publishedAt: "2026-05-01T00:00:00Z",
+            startTime: 95,
+            context: "crowd scene",
+            candidates: aiCandidates,
+          }),
+        ),
+      },
+    ]);
+    const result = await locateQuote(
+      {
+        quote: "xylophone zephyr nebula",
+        creator: "",
+        scene: "crowd scene",
+        sinceDays: 0,
+      },
+      { llm: TEST_LLM, youtubeApiKey: "yt-key", fetchFn: fetch },
+    );
+    expect(result.found).toBe(true);
+    expect(result.videoUrl).toBe(youtubeWatchUrl("rmain"));
+    expect(result.candidates.map((candidate) => candidate.url)).toEqual([
+      youtubeWatchUrl("r1"),
+      youtubeWatchUrl("r2"),
+      youtubeWatchUrl("r3"),
+      youtubeWatchUrl("r4"),
+    ]);
+  });
+
+  it("returns no runner-ups when only one video matches", async () => {
+    setup([
+      { status: 200, body: chatBody(VARIANTS_REPLY) },
+      { status: 200, body: chatBody(RANK_VID1_REPLY) },
+    ]);
+    const result = await locateQuote(
+      { quote: "quantum bicycle", creator: "@tester", scene: "", sinceDays: 0 },
+      { llm: TEST_LLM, youtubeApiKey: "yt-key", fetchFn: fetch },
+    );
+    expect(result.found).toBe(true);
+    expect(result.videoUrl).toBe(youtubeWatchUrl("vid1"));
+    expect(result.candidates).toEqual([]);
+  });
+
+  it("never repeats the main result among the runner-ups", async () => {
+    setup([
+      { status: 200, body: chatBody(VARIANTS_REPLY) },
+      { status: 200, body: chatBody(RANK_VID1_REPLY) },
+      {
+        status: 200,
+        body: chatBody(
+          fallbackReply({
+            found: true,
+            confidence: "medium",
+            videoUrl: youtubeWatchUrl("rmain"),
+            videoTitle: "Remembered film",
+            candidates: [
+              {
+                url: youtubeWatchUrl("rmain"),
+                title: "Same as main",
+                reason: "AI suggestion",
+              },
+              {
+                url: youtubeWatchUrl("r1"),
+                title: "Runner 1",
+                reason: "AI suggestion",
+              },
+              {
+                url: youtubeWatchUrl("r1"),
+                title: "Runner 1 again",
+                reason: "AI suggestion",
+              },
+            ],
+          }),
+        ),
+      },
+    ]);
+    const result = await locateQuote(
+      {
+        quote: "xylophone zephyr nebula",
+        creator: "",
+        scene: "crowd scene",
+        sinceDays: 0,
+      },
+      { llm: TEST_LLM, youtubeApiKey: "yt-key", fetchFn: fetch },
+    );
+    expect(result.found).toBe(true);
+    expect(result.candidates.map((candidate) => candidate.url)).toEqual([
+      youtubeWatchUrl("r1"),
+    ]);
   });
 
   it("clears the answer when the AI main link is dead", async () => {

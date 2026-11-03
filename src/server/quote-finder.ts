@@ -26,6 +26,8 @@ export const FOUND_THRESHOLD = 0.45;
 const HIGH_AT = 0.8;
 const MEDIUM_AT = 0.55;
 const CANDIDATE_TARGET = 10;
+/** Runner-ups shown under a found result: at most this many. */
+const RUNNER_UP_CAP = 4;
 const VERIFY_CONCURRENCY = 4;
 const VERIFY_TIMEOUT_MS = 8000;
 const MODEL_TIMEOUT_MS = 30000;
@@ -555,6 +557,28 @@ function padCandidates(
   return [...kept, ...pads].slice(0, CANDIDATE_TARGET);
 }
 
+// Runner-ups for a found result: the ranked entries after the main
+// result, in rank order, with the main video and repeats removed,
+// capped at 4. Pure: no API calls.
+export function selectRunnerUps(
+  ranked: QuoteCandidate[],
+  mainUrl: string,
+): QuoteCandidate[] {
+  const seen = new Set([mainUrl]);
+  const runnerUps: QuoteCandidate[] = [];
+  for (const candidate of ranked) {
+    if (runnerUps.length >= RUNNER_UP_CAP) {
+      break;
+    }
+    if (!candidate.url || seen.has(candidate.url)) {
+      continue;
+    }
+    seen.add(candidate.url);
+    runnerUps.push(candidate);
+  }
+  return runnerUps;
+}
+
 export async function locateQuote(
   input: LocateInput,
   deps: LocateDeps = {},
@@ -709,6 +733,17 @@ export async function locateQuote(
   if (best && best.score >= FOUND_THRESHOLD) {
     const videoUrl = youtubeWatchUrl(best.video.id);
     const reason = reasons.get(videoUrl);
+    const ranked: QuoteCandidate[] = ordered.map((entry) => {
+      const url = youtubeWatchUrl(entry.video.id);
+      return {
+        url,
+        title: entry.video.title,
+        creator: entry.video.channelTitle || engine.channelTitle || "YouTube",
+        reason:
+          reasons.get(url) ??
+          `Title/description match · ${shortDate(entry.video.publishedAt)}`,
+      };
+    });
     return {
       found: true,
       confidence: confidenceForScore(best.score),
@@ -726,7 +761,7 @@ export async function locateQuote(
       fullSentence,
       context: reason ? [reason] : [],
       notes: [searchNote(engine), UNVERIFIED_NOTE],
-      candidates: [],
+      candidates: selectRunnerUps(ranked, videoUrl),
       engine: engineSummary(engine),
     };
   }
@@ -846,7 +881,7 @@ export async function locateQuote(
       fullSentence,
       context: fallback.context ? [fallback.context] : [],
       notes,
-      candidates: [],
+      candidates: selectRunnerUps(kept, fallback.videoUrl),
       engine: engineSummary(engine),
     };
   }

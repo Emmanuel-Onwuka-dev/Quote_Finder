@@ -60,6 +60,14 @@ Set these as server-side environment variables. Browser code must never read the
 | `META_BASE_URL` | `https://api.meta.ai/v1` (OpenAI SDK compatible). Pass the key to the SDK explicitly; the OpenAI SDK does not read `MODEL_API_KEY` on its own. |
 | `YOUTUBE_API_KEY` | YouTube Data API v3 key. Used for channel resolution, uploads, and search. |
 | `SEARCH_BUDGET_UNITS` | Optional. Daily cap on main-search YouTube quota units. Default 3000. Raise it for heavy testing. Resets at UTC midnight. |
+| `PORT` | Server listen port. Default 8787. Read directly in src/server/index.ts, not through config.ts. |
+| `GOOGLE_CLIENT_ID` | Google OAuth client ID for creator sign-in (section 13A). |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret. Server-side only. |
+| `GOOGLE_REDIRECT_URI` | OAuth callback URL. Must match the Google Cloud Console entry exactly. |
+| `ARCHIVE_TOKEN_KEY` | 32 random bytes as 64 hex characters. Encrypts stored refresh tokens. |
+| `ARCHIVE_DB_PATH` | SQLite file for the creator archive. Default ./archive.db. |
+| `OPEN_MODEL_NAME` | Model name sent to the local Glimmer server. Default "glimmer". |
+| `SENTRY_DSN` | Optional. Error alert endpoint. When unset, no alerts are sent. |
 
 Also configure these model names. Keep them in config rather than in code so you can swap versions:
 
@@ -130,7 +138,7 @@ Before any search, ask `TEXT_MODEL` for 3 to 5 alternative wordings of the quote
 1. Build the upload index.
 2. If a time window is set, keep only videos published after the cutoff (`publishedAfter`).
 3. Rank videos by title and description relevance (section 5.5).
-4. Run a YouTube Data API in-channel search (`maxResults = 15`, query = the quoted line).
+4. Run a YouTube Data API in-channel search (`maxResults = 15`, query = the quoted line). If a time window is set, drop in-channel results older than the cutoff before merging, the same as the search-everywhere path.
 5. Merge those results with the ranked videos into one deduplicated pool, capped at 12. This is the **shortlist**.
 6. Score each shortlist entry on its title and description. Report progress per video.
 
@@ -231,7 +239,7 @@ Every found result must say the timestamp is not verified.
 
 ### 7.3 Muse Spark: query variants, ranking, and fallback
 
-Muse Spark does three jobs, all for YouTube only:
+Muse Spark does three jobs, all for YouTube only. Its chat calls share a daily budget of 1000 calls per UTC day, counted per process. When the budget is spent, the variant and ranking calls return empty results, and the memory fallback degrades to title and description matches with a plain-language note.
 
 1. **Query variants (before search).** Ask `TEXT_MODEL` for 3 to 5 alternative wordings of the quote, as a JSON array. Use them as extra search queries (section 5.4). When Glimmer is enabled, it takes one of the 3 search slots, after the first two Muse Spark wordings. The total number of searches does not change.
 2. **Ranking (after scoring, whenever the shortlist is non-empty).** Send the shortlist (titles, descriptions, URLs, dates), the quote, the scene, and the time window. Ask it to pick the best matches and give a one-line reason for each. Only shortlist URLs may be chosen.

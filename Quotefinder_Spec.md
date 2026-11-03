@@ -366,6 +366,8 @@ Expose the hook as `{ recording, transcribing, error, toggle }`. It also exposes
   2. A live progress feed built from the SSE stages.
   3. The result card or candidate list.
 - The time window appears in every turn's header.
+- A running search can be cancelled. A cancelled search is removed from the page.
+- The session can be cleared with a Clear history button. Clearing does not affect the server.
 
 ### 10.2 Input area
 

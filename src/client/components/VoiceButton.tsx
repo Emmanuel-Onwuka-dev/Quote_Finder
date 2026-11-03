@@ -160,7 +160,7 @@ export function VoiceStatus({ voice }: { voice: VoiceInput }) {
         </p>
       )}
       {voice.transcribing && (
-        <p className="mt-2 text-sm text-muted">Writing down what you said…</p>
+        <p className="mt-2 text-sm text-muted">Muse Voice Transcribe is writing down what you said…</p>
       )}
       {voice.error && (
         <p role="alert" className="mt-2 text-sm text-destructive">

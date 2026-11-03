@@ -485,7 +485,7 @@ In the browser, confirm:
 
 ### 13A.4 Retention
 
-Caption cue text is purged after 30 days.
+Caption cue text is purged after 30 days, by a daily job and whenever the archive is used.
 
 **Out of scope for the archive.**
 - Viewers searching anyone else's captions.

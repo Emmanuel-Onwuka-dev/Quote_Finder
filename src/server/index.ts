@@ -3,6 +3,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { existsSync } from "node:fs";
 import { captureAlert, initAlerts } from "./alerts";
+import { startPurgeSchedule } from "./archive/purge";
 import { createArchiveRoutes } from "./archive/routes";
 import { openArchiveStore } from "./archive/store";
 import { loadConfig } from "./config";
@@ -27,6 +28,9 @@ app.get("/api/health", (c) => c.json({ ok: true, service: "quotefinder" }));
 const archiveStore = openArchiveStore(archiveConfig.archiveDbPath, {
   searchBudgetUnits: archiveConfig.searchBudgetUnits,
 });
+// Daily cleanup (§13A.4): expired caption text is purged even when
+// nobody uses the archive.
+startPurgeSchedule(archiveStore, 24 * 60 * 60 * 1000);
 
 app.post("/api/quote-stream", createQuoteStreamHandler({ archiveStore }));
 

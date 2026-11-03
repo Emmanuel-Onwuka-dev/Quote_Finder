@@ -19,7 +19,7 @@ export function CandidateList({
   publishedAt,
   timeWindow,
 }: CandidateListProps) {
-  if (candidates.length === 0) return null;
+  if (candidates.length === 0 && notes.length === 0) return null;
   return (
     <div className="mt-4 border-t border-border pt-4">
       {notes.map((note, index) => (
@@ -27,19 +27,23 @@ export function CandidateList({
           {note}
         </p>
       ))}
-      <h3 className="mt-3 font-display text-lg font-bold">
-        Possible matches
-      </h3>
-      <ul className="mt-3 space-y-4">
-        {candidates.map((candidate, index) => (
-          <CandidateItem
-            key={`${index}-${candidate.url}`}
-            candidate={candidate}
-            publishedAt={publishedAt}
-            timeWindow={timeWindow}
-          />
-        ))}
-      </ul>
+      {candidates.length > 0 && (
+        <>
+          <h3 className="mt-3 font-display text-lg font-bold">
+            Possible matches
+          </h3>
+          <ul className="mt-3 space-y-4">
+            {candidates.map((candidate, index) => (
+              <CandidateItem
+                key={`${index}-${candidate.url}`}
+                candidate={candidate}
+                publishedAt={publishedAt}
+                timeWindow={timeWindow}
+              />
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import {
   moodFor,
   QUOTE_CARD_DAILY_CALL_LIMIT,
   QUOTE_CARD_MAX_SENTENCE,
+  sceneFor,
   type QuoteCardDeps,
 } from "./quote-card";
 
@@ -112,6 +113,19 @@ describe("POST /api/quote-card", () => {
     expect(forwarded.prompt).not.toContain("we danced with joy");
   });
 
+  it("builds the prompt from scene and mood, never the sentence", async () => {
+    const { app, seen } = setup();
+    const res = await postCard(app, { sentence: "xylophone zephyr quantum" });
+    expect(res.status).toBe(200);
+    const forwarded = JSON.parse(String(seen[0]?.init.body)) as {
+      prompt: string;
+    };
+    expect(forwarded.prompt).toContain("No text");
+    expect(forwarded.prompt).toContain("calm and thoughtful");
+    expect(forwarded.prompt).not.toContain("xylophone zephyr quantum");
+    expect(forwarded.prompt).not.toContain("xylophone");
+  });
+
   it("builds a data URL from b64_json", async () => {
     const { app } = setup([
       { status: 200, body: { data: [{ b64_json: "aGVsbG8=" }] } },
@@ -205,8 +219,49 @@ describe("moodFor", () => {
   });
 
   it("matches whole words only", () => {
-    expect(moodFor("running wild")).toBe("calm and thoughtful");
+    expect(moodFor("a runner passes by")).toBe("calm and thoughtful");
     expect(moodFor("RUN FOR YOUR LIFE")).toBe("tense and dramatic");
+  });
+
+  it("returns the tense mood for a widened keyword", () => {
+    expect(moodFor("keep running")).toBe("tense and dramatic");
+  });
+});
+
+describe("sceneFor", () => {
+  it("returns the same scene for the same sentence and mood", () => {
+    const first = sceneFor("never give up", "calm and thoughtful");
+    expect(sceneFor("never give up", "calm and thoughtful")).toBe(first);
+    expect(sceneFor("never give up", "calm and thoughtful")).toBe(first);
+  });
+
+  it("spreads different sentences across scenes", () => {
+    const sentences = [
+      "never give up",
+      "run from the danger",
+      "I miss you, goodbye",
+      "we laughed with joy",
+      "hope at dawn",
+      "the storm broke over the mountains",
+      "rain on an empty street at night",
+      "summer sun over our home",
+      "a calm and gentle morning prayer",
+      "hurry, we must escape the war",
+      "tears and grief in the dark",
+      "friends celebrate with a smile",
+      "grace and faith bring peace",
+      "shout if you are afraid",
+      "alone and lost in the fog",
+      "dance while the evening glows",
+      "believe in a better tomorrow",
+      "the cat sat on the mat",
+      "sorry for the missed goodbye",
+      "angry waves chase the shore",
+    ];
+    const scenes = new Set(
+      sentences.map((sentence) => sceneFor(sentence, moodFor(sentence))),
+    );
+    expect(scenes.size).toBeGreaterThanOrEqual(4);
   });
 });
 

@@ -55,26 +55,36 @@ export function moodFor(sentence: string): string {
       keywords: [
         "fight",
         "run",
+        "running",
         "danger",
         "afraid",
         "fear",
         "war",
         "chase",
         "escape",
+        "storm",
+        "angry",
+        "shout",
+        "hurry",
       ],
     },
     {
       mood: "quiet and melancholy",
       keywords: [
         "miss",
+        "missed",
         "gone",
         "lost",
         "alone",
         "goodbye",
         "tears",
         "cry",
+        "crying",
         "grief",
         "sorry",
+        "empty",
+        "rain",
+        "night",
       ],
     },
     {
@@ -84,10 +94,15 @@ export function moodFor(sentence: string): string {
         "happy",
         "joy",
         "laugh",
+        "laughing",
         "smile",
         "dance",
         "celebrate",
         "friend",
+        "friends",
+        "sun",
+        "summer",
+        "home",
       ],
     },
     {
@@ -95,12 +110,16 @@ export function moodFor(sentence: string): string {
       keywords: [
         "hope",
         "pray",
+        "prayer",
         "grace",
         "faith",
         "light",
         "peace",
         "dawn",
         "believe",
+        "morning",
+        "calm",
+        "gentle",
       ],
     },
   ];
@@ -114,10 +133,76 @@ export function moodFor(sentence: string): string {
   return "calm and thoughtful";
 }
 
+/** Fixed background scenes per mood: quiet landscapes and still
+ * scenes with no people, no text, and no symbols. */
+const SCENES: Record<string, string[]> = {
+  "tense and dramatic": [
+    "a storm-darkened ridgeline with lightning far off",
+    "black waves breaking against jagged rocks",
+    "a wind-torn forest under racing clouds",
+    "a narrow canyon with a river rushing through it",
+    "dark dunes shifting under a burning sky",
+  ],
+  "quiet and melancholy": [
+    "a rain-streaked window at dusk",
+    "an empty shoreline under grey clouds",
+    "a single lamp in a dark field",
+    "a misty lake with bare trees on its banks",
+    "a quiet moor fading into evening fog",
+  ],
+  "warm and joyful": [
+    "a sunlit meadow with wildflowers in bloom",
+    "a golden wheat field under a bright blue sky",
+    "a village square strung with paper lanterns",
+    "an orchard heavy with ripe fruit at noon",
+    "a calm cove with gentle surf at midday",
+  ],
+  "hopeful and serene": [
+    "a sunrise over calm mountain lakes",
+    "a pale dawn sky above rolling green hills",
+    "a still pond reflecting soft morning light",
+    "a lighthouse beam sweeping a quiet cove at dawn",
+    "snow peaks glowing pink above a silent valley",
+  ],
+  "calm and thoughtful": [
+    "a stone path winding through ancient woods",
+    "a slow river bending past willow trees",
+    "a courtyard garden with a mossy stone bench",
+    "soft clouds drifting over open farmland",
+    "a cabin window glowing in deep pine woods",
+  ],
+};
+
+/** FNV-1a 32-bit hash: stable across runs, no randomness. */
+function hash32(text: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+const FALLBACK_SCENE = "soft clouds drifting over open farmland";
+
+/** Pick the background scene for a sentence from its mood's fixed
+ * list, using a stable hash of the sentence. The same sentence and
+ * mood always return the same scene. Unknown moods fall back to the
+ * calm list. Pure: no randomness, no clock. */
+export function sceneFor(sentence: string, mood: string): string {
+  const scenes = SCENES[mood] ?? SCENES["calm and thoughtful"] ?? [];
+  if (scenes.length === 0) {
+    return FALLBACK_SCENE;
+  }
+  return scenes[hash32(sentence) % scenes.length] ?? FALLBACK_SCENE;
+}
+
 function cardPrompt(sentence: string): string {
+  const mood = moodFor(sentence);
+  const scene = sceneFor(sentence, mood);
   return (
-    "An abstract, atmospheric background with soft light and texture " +
-    `that feels ${moodFor(sentence)}. ` +
+    "An atmospheric background of " +
+    `${scene}, with soft light and texture that feels ${mood}. ` +
     "No text, no letters, no words, no numbers, no symbols, no people, " +
     "no faces. Landscape composition with calm open space in the centre."
   );

@@ -1,4 +1,4 @@
-// Creator archive HTTP routes (§4.1–§4.4): OAuth connect, status, upload
+// Creator archive HTTP routes (section 13A): OAuth connect, status, upload
 // listing, caption indexing, creator-only caption search, and disconnect.
 // Mounted at /api/archive. Secrets never leave the server: the browser
 // sees channel titles and counts, plus, on the /creator page only, the

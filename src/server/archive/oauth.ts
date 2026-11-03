@@ -1,4 +1,4 @@
-// Google OAuth for the creator archive (§4.1): PKCE helpers, consent URL,
+// Google OAuth for the creator archive (section 13A): PKCE helpers, consent URL,
 // code exchange, channel lookup, and token revocation. Only the
 // youtube.force-ssl scope is ever requested. Unit tested in oauth.test.ts
 // with mocked Google endpoints.

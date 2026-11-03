@@ -1,4 +1,4 @@
-// YouTube captions API for the creator archive (§4.2): list a video's
+// YouTube captions API for the creator archive (section 13A): list a video's
 // caption tracks and download the SRT text. All calls use the creator's
 // OAuth access token. An API key is not enough.
 

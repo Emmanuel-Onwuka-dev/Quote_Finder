@@ -97,7 +97,7 @@ export interface ArchiveStoreOptions {
   searchBudgetUnits?: number;
 }
 
-/** §4.3 caption retention: cue text is purged after 30 days. */
+/** Section 13A.4 caption retention: cue text is purged after 30 days. */
 export const ARCHIVE_FRESH_DAYS = 30;
 
 /** UTC calendar day key (`YYYY-MM-DD`) for the budget counter. */

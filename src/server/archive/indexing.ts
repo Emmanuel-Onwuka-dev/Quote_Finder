@@ -1,4 +1,4 @@
-// Caption indexing runs (§4.2): for each selected video, spend budget,
+// Caption indexing runs (section 13A): for each selected video, spend budget,
 // fetch the best caption track, download and parse the SRT. Results are
 // returned, not stored. A3 persists them. Progress mirrors the search
 // SSE pattern (one event per video plus its outcome).
@@ -46,7 +46,7 @@ export interface IndexRunInput {
   budgetKind?: BudgetKind;
 }
 
-/** §4.3 message shown when the daily budget stops a run. */
+/** section 13A.4 message shown when the daily budget stops a run. */
 export const INDEX_PAUSED_MESSAGE = "Indexing paused until tomorrow";
 
 export async function runIndexing(

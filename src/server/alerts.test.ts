@@ -75,9 +75,9 @@ describe("beforeSend", () => {
       breadcrumbs: [
         {
           message:
-            "GET https://www.googleapis.com/youtube/v3/search?q=test&key=AIzaFakeKey123",
+            "GET https://www.googleapis.com/youtube/v3/search?q=test&key=FAKE_TEST_KEY_NOT_REAL",
           data: {
-            url: "https://www.googleapis.com/youtube/v3/search?q=test&key=AIzaFakeKey123",
+            url: "https://www.googleapis.com/youtube/v3/search?q=test&key=FAKE_TEST_KEY_NOT_REAL",
             status_code: 200,
           },
         },
@@ -95,11 +95,11 @@ describe("beforeSend", () => {
     expect(excValue).not.toContain("token=abcdef");
     expect(excValue).toContain("[redacted]");
     const crumb = out?.breadcrumbs?.[0];
-    expect(String(crumb?.message)).not.toContain("key=AIzaFakeKey123");
+    expect(String(crumb?.message)).not.toContain("key=FAKE_TEST_KEY_NOT_REAL");
     expect(String(crumb?.message)).not.toContain("q=test");
     expect(String(crumb?.message)).toContain("[redacted]");
     expect(String((crumb?.data as Record<string, unknown> | undefined)?.["url"] ?? "")).not.toContain(
-      "key=AIzaFakeKey123",
+      "key=FAKE_TEST_KEY_NOT_REAL",
     );
     expect((crumb?.data as Record<string, unknown> | undefined)?.["status_code"]).toBe(200);
   });

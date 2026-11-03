@@ -25,7 +25,7 @@ Quotefinder is a web app. A user types or speaks a line they remember from a vid
 
 Quotefinder also has a creator archive (section 13A). A creator with a YouTube channel signs in with Google, connects their own channel, and searches the captions of their own uploads. Caption text is only ever shown to that creator.
 
-When a YouTube search can run, the app returns at least 10 verified candidate links, or says plainly that it could not verify enough (see sections 7.4 and 7.5).
+When a YouTube search can run, the app returns the verified candidates described in section 7.4 (see section 7.5).
 
 ---
 
@@ -455,7 +455,7 @@ In the browser, confirm:
 - **Instagram, TikTok, and Facebook are not supported** in this version.
 - Matching is loose on wording and strict on substance (the `keyCoverage` guard).
 - Time windows filter the YouTube engine and the AI prompt, and appear in every turn's header.
-- When a YouTube search can run, the app returns at least 10 verified candidate links when it is not confident, or says plainly that it could not verify enough (see sections 7.4 and 7.5).
+- When a YouTube search can run, the app returns the verified candidates described in section 7.4 when it is not confident (see section 7.5).
 - Credentials are entered only through the platform's secret store, never in chat or source code.
 
 ---
@@ -496,4 +496,4 @@ Caption cue text is purged after 30 days, by a daily job and whenever the archiv
 - Downloading video or audio.
 - Any caption source other than the creator's own YouTube captions.
 
-**Open question, owner decides before launch.** YouTube's policy text does not clearly cover showing caption text from an authorized channel to other people. This section keeps caption text private to the creator, so it does not depend on that answer. Showing matched caption text to viewers needs a separate policy check and a new spec change first.
+**Open question for the owner.** YouTube's policy text does not clearly cover showing caption text from an authorized channel to other people. This section keeps caption text private to the creator, so it does not depend on that answer. Showing matched caption text to viewers needs a separate policy check and a new spec change first.

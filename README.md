@@ -173,3 +173,7 @@ Errors are logged to the server console with the step name. If
 SENTRY_DSN is set, they are also sent to Sentry, with request bodies,
 headers, cookies, query strings, and keys removed. Leave SENTRY_DSN
 empty to turn this off.
+
+## Licence
+
+This project is licensed under the MIT Licence. See LICENSE.

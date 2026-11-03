@@ -8,7 +8,7 @@ export interface TurnState {
   id: number;
   input: SearchInput;
   timeWindow: string;
-  status: "streaming" | "done" | "error";
+  status: "streaming" | "done" | "error" | "cancelled";
   progress: ProgressUpdate[];
   result: LocateResult | null;
   error: string | null;

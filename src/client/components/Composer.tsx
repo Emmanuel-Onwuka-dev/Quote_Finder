@@ -16,6 +16,7 @@ interface ComposerProps {
   /** Increment to clear quote/scene/window once a search starts. */
   resetKey: number;
   onSubmit: (input: SearchInput) => void;
+  onCancel: () => void;
 }
 
 const CUSTOM_DAYS_MAX = 3650;
@@ -34,6 +35,7 @@ export function Composer({
   serverError,
   resetKey,
   onSubmit,
+  onCancel,
 }: ComposerProps) {
   const [quote, setQuote] = useState("");
   const [creator, setCreator] = useState("");
@@ -208,13 +210,23 @@ export function Composer({
         </p>
       )}
 
-      <button
-        type="submit"
-        disabled={disabled || quoteBlank}
-        className="mt-4 rounded-lg bg-accent px-5 py-2.5 font-medium text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        Search
-      </button>
+      {disabled ? (
+        <button
+          type="button"
+          onClick={onCancel}
+          className="mt-4 rounded-lg border border-border px-5 py-2.5 font-medium text-foreground"
+        >
+          Cancel
+        </button>
+      ) : (
+        <button
+          type="submit"
+          disabled={quoteBlank}
+          className="mt-4 rounded-lg bg-accent px-5 py-2.5 font-medium text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Search
+        </button>
+      )}
     </form>
   );
 }

@@ -43,6 +43,8 @@ export interface StreamCallbacks {
   onProgress: (update: ProgressUpdate) => void;
   onResult: (result: LocateResult) => void;
   onError: (message: string) => void;
+  /** Fired when the user cancels the search. Never paired with onError. */
+  onCancelled?: () => void;
 }
 
 function readJsonObject(text: string): Record<string, unknown> | null {
@@ -123,15 +125,18 @@ function normalizeResult(data: Record<string, unknown>): LocateResult {
 export function useQuoteStream(): {
   running: boolean;
   start: (input: SearchInput, callbacks: StreamCallbacks) => void;
+  cancel: () => void;
 } {
   const [running, setRunning] = useState(false);
   const runningRef = useRef(false);
   const cancelledRef = useRef(false);
+  const controllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     cancelledRef.current = false;
     return () => {
       cancelledRef.current = true;
+      controllerRef.current?.abort();
     };
   }, []);
 
@@ -140,24 +145,44 @@ export function useQuoteStream(): {
       if (runningRef.current) return;
       runningRef.current = true;
       setRunning(true);
-      void runStream(input, callbacks, () => cancelledRef.current).finally(
-        () => {
-          runningRef.current = false;
-          if (!cancelledRef.current) setRunning(false);
-        },
-      );
+      const controller = new AbortController();
+      controllerRef.current = controller;
+      void runStream(
+        input,
+        callbacks,
+        () => cancelledRef.current,
+        controller.signal,
+      ).finally(() => {
+        if (controllerRef.current === controller) {
+          controllerRef.current = null;
+        }
+        runningRef.current = false;
+        if (!cancelledRef.current) setRunning(false);
+      });
     },
     [],
   );
 
-  return { running, start };
+  const cancel = useCallback(() => {
+    controllerRef.current?.abort();
+  }, []);
+
+  return { running, start, cancel };
 }
 
 async function runStream(
   input: SearchInput,
   callbacks: StreamCallbacks,
   isCancelled: () => boolean,
+  signal: AbortSignal,
 ): Promise<void> {
+  let cancelNotified = false;
+  const notifyCancelled = () => {
+    if (!cancelNotified) {
+      cancelNotified = true;
+      callbacks.onCancelled?.();
+    }
+  };
   let response: Response;
   try {
     response = await fetch("/api/quote-stream", {
@@ -169,16 +194,24 @@ async function runStream(
         scene: input.scene,
         sinceDays: input.sinceDays,
       }),
+      signal,
     });
   } catch (error) {
-    if (!isCancelled()) {
-      callbacks.onError(
-        error instanceof Error ? error.message : "search request failed",
-      );
+    if (isCancelled()) return;
+    if (signal.aborted || isAbortError(error)) {
+      notifyCancelled();
+      return;
     }
+    callbacks.onError(
+      error instanceof Error ? error.message : "search request failed",
+    );
     return;
   }
   if (isCancelled()) return;
+  if (signal.aborted) {
+    notifyCancelled();
+    return;
+  }
 
   if (!response.ok || !response.body) {
     let message = `request failed with status ${response.status}`;
@@ -189,6 +222,10 @@ async function runStream(
       }
     } catch {
       // Keep the status fallback.
+    }
+    if (signal.aborted) {
+      notifyCancelled();
+      return;
     }
     callbacks.onError(message);
     return;
@@ -205,23 +242,37 @@ async function runStream(
         await reader.cancel().catch(() => {});
         return;
       }
+      if (signal.aborted) {
+        await reader.cancel().catch(() => {});
+        notifyCancelled();
+        return;
+      }
       if (done) return;
       const finished = dispatchEvents(
         parser.feed(decoder.decode(value, { stream: true })),
         callbacks,
       );
-      if (finished || isCancelled()) {
+      if (finished || signal.aborted) {
         await reader.cancel().catch(() => {});
+        if (signal.aborted && !finished) notifyCancelled();
         return;
       }
     }
   } catch (error) {
-    if (!isCancelled()) {
-      callbacks.onError(
-        error instanceof Error ? error.message : "stream interrupted",
-      );
+    if (isCancelled()) return;
+    if (signal.aborted || isAbortError(error)) {
+      notifyCancelled();
+      return;
     }
+    callbacks.onError(
+      error instanceof Error ? error.message : "stream interrupted",
+    );
   }
+}
+
+/** True for the error fetch and the stream reader throw on abort. */
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
 }
 
 /** Returns true once a terminal result/error event has been handled. */

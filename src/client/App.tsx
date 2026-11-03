@@ -9,6 +9,7 @@ import {
 } from "./hooks/useQuoteStream";
 import { timeWindowLabel } from "./lib/format";
 import { shouldFollowToBottom } from "./lib/scroll";
+import { shouldKeepTurn } from "./lib/turns";
 
 export default function App() {
   const [turns, setTurns] = useState<TurnState[]>([]);
@@ -16,7 +17,7 @@ export default function App() {
   const [resetKey, setResetKey] = useState(0);
   const nextId = useRef(1);
   const forceFollowRef = useRef(false);
-  const { running, start } = useQuoteStream();
+  const { running, start, cancel } = useQuoteStream();
   const busy = running;
 
   // Chat-style follow: keep the newest turn's latest content in view above
@@ -88,6 +89,16 @@ export default function App() {
         onResult: (result: LocateResult) => {
           updateTurn(id, { status: "done", result });
         },
+        onCancelled: () => {
+          setTurns((prev) =>
+            prev
+              .map(
+                (turn): TurnState =>
+                  turn.id === id ? { ...turn, status: "cancelled" } : turn,
+              )
+              .filter(shouldKeepTurn),
+          );
+        },
         onError: (message: string) => {
           if (started) {
             updateTurn(id, { status: "error", error: message });
@@ -111,6 +122,12 @@ export default function App() {
     },
     [start, updateTurn],
   );
+
+  const clearHistory = useCallback(() => {
+    cancel();
+    setTurns([]);
+    setComposerError(null);
+  }, [cancel]);
 
   return (
     <div className="min-h-screen bg-background font-body text-foreground">
@@ -143,16 +160,27 @@ export default function App() {
               No searches yet. Try describing a video.
             </p>
           ) : (
-            <ol className="space-y-6">
-              {turns.map((turn) => (
-                <Turn
-                  key={turn.id}
-                  turn={turn}
-                  running={busy}
-                  onRetry={startSearch}
-                />
-              ))}
-            </ol>
+            <>
+              <div className="mb-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={clearHistory}
+                  className="rounded-lg border border-border px-4 py-2 font-medium text-foreground"
+                >
+                  Clear history
+                </button>
+              </div>
+              <ol className="space-y-6">
+                {turns.map((turn) => (
+                  <Turn
+                    key={turn.id}
+                    turn={turn}
+                    running={busy}
+                    onRetry={startSearch}
+                  />
+                ))}
+              </ol>
+            </>
           )}
         </main>
 
@@ -162,6 +190,7 @@ export default function App() {
             serverError={composerError}
             resetKey={resetKey}
             onSubmit={startSearch}
+            onCancel={cancel}
           />
         </div>
 

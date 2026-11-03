@@ -19,6 +19,7 @@ export function CandidateList({
   publishedAt,
   timeWindow,
 }: CandidateListProps) {
+  if (candidates.length === 0) return null;
   return (
     <div className="mt-4 border-t border-border pt-4">
       {notes.map((note, index) => (

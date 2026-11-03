@@ -317,9 +317,10 @@ These extend the core flow. They are optional, but they show more of the Meta st
 - `progress` events with `{ stage, detail }` at each step. Stages include:
   - "Resolving channel"
   - "Indexing uploads"
-  - "Ranking candidates"
+  - "Muse Spark is ranking the matches"
   - "Matching titles and descriptions"
-  - "Asking the model"
+  - "Muse Spark is writing search wordings"
+  - "Muse Spark is answering from memory"
   - "Verifying links"
 - `result` event with the full result, or
 - `error` event with `{ message }`

@@ -149,7 +149,7 @@ function QuoteCard({
   return (
     <div className="mt-4">
       {loading && !imageUrl && (
-        <p className="text-sm text-muted">Making your share card…</p>
+        <p className="text-sm text-muted">Muse Image is painting the card background</p>
       )}
       {imageUrl && (
         <>

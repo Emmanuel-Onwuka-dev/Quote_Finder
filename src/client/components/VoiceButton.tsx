@@ -55,7 +55,7 @@ export function VoiceButton({
         voice.recording
           ? "Stop recording"
           : voice.transcribing
-            ? "Transcribing what you said"
+            ? "Muse Voice Transcribe is turning your speech into text"
             : dictateLabel
       }
       className={

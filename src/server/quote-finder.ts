@@ -623,7 +623,7 @@ export async function locateQuote(
   const whenLine = windowLabel(input.sinceDays);
 
   // 1. Query variants (before search).
-  onProgress("Asking the model", "alternative wordings");
+  onProgress("Muse Spark is writing search wordings", "alternative wordings");
   const variants = await queryVariants(quote, llm, fetchFn);
   // §7.7: optional Glimmer rephrasings append to Spark's variants.
   // Unset or failing endpoint means Spark-only, exactly as before.
@@ -722,7 +722,7 @@ export async function locateQuote(
 
   // 3. Ranking (whenever the shortlist is non-empty).
   if (engine.shortlist.length > 0) {
-    onProgress("Ranking candidates", `${engine.shortlist.length} videos`);
+    onProgress("Muse Spark is ranking the matches", `${engine.shortlist.length} videos`);
     const picks = await rankShortlist(
       {
         quote,
@@ -793,7 +793,7 @@ export async function locateQuote(
   }
 
   // 4. Fallback (only when nothing reaches the found threshold).
-  onProgress("Asking the model", "answering from memory");
+  onProgress("Muse Spark is answering from memory", "answering from memory");
   let fallback: FallbackAnswer;
   try {
     fallback = await fallbackAnswer(

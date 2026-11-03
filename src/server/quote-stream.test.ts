@@ -185,7 +185,7 @@ describe("POST /api/quote-stream", () => {
       (entry) => (entry.data as { stage: string }).stage,
     );
     expect(stages).toContain("Resolving channel");
-    expect(stages).toContain("Ranking candidates");
+    expect(stages).toContain("Muse Spark is ranking the matches");
 
     const results = events.filter((entry) => entry.event === "result");
     expect(results).toHaveLength(1);
@@ -345,7 +345,7 @@ describe("search quota", () => {
         .filter((entry) => entry.event === "progress")
         .map((entry) => (entry.data as { stage: string }).stage);
       expect(stages).not.toContain("Resolving channel");
-      expect(stages).toContain("Asking the model");
+      expect(stages).toContain("Muse Spark is writing search wordings");
     } finally {
       store.close();
     }

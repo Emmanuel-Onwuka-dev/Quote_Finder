@@ -57,21 +57,30 @@ audio. It uses only official APIs (YouTube Data API v3), oEmbed, the YouTube
 embedded player, and Meta's models. No transcript fetching, no scrapers, no
 downloads.
 
-Known risk (creator archive, spec §13A): YouTube's policy text does not
+Known risk (creator archive, spec section 13A): YouTube's policy text does not
 clearly cover showing caption text from an authorized channel to other people.
 Caption text is shown only to the signed-in creator who owns the channel, so
 this version does not depend on that answer.
 
 ## Models and tools
 
-- Text (query variants, ranking, fallback): Muse Spark (`muse-spark-1.3`)
-  through the Meta Model API.
-- Speech (voice input): Muse Voice Transcribe (`muse-voice-transcribe-1.0`)
-  through the Meta Model API.
-- Optional: Muse Image quote cards, Muse Glimmer query rephrasing
-  (off on the hosted version: it needs a local Glimmer server reachable
-  at OPEN_MODEL_URL). Glimmer's model name comes from OPEN_MODEL_NAME
-  (default glimmer).
+**Used in the live app:**
+
+- Muse Spark (`TEXT_MODEL`, default `muse-spark-1.3`): query variants and
+  ranking. Endpoint: `POST {META_BASE_URL}/chat/completions`
+- Muse Voice Transcribe (`TRANSCRIPTION_MODEL`, default
+  `muse-voice-transcribe-1.0`): voice input. Endpoint:
+  `POST {META_BASE_URL}/asr/transcribe`
+- Muse Image (`IMAGE_MODEL`, default `muse-image-1.0`): share card
+  backgrounds. Endpoint: `POST {META_BASE_URL}/images/generations`
+
+**Optional, local only:**
+
+- Muse Glimmer (`OPEN_MODEL_URL`, `OPEN_MODEL_NAME`): extra query wordings.
+  Runs only on a local server you control. Off on the hosted version.
+
+**Build tool** (not a runtime dependency):
+
 - Coding agent: built with **Muse Code**.
 
 ## Original work (built during the hackathon)

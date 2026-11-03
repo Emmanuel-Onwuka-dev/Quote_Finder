@@ -43,6 +43,13 @@ export function PrivacyPage() {
             audio is sent to Meta&apos;s transcription model.
           </li>
           <li>
+            When a share card is made for a result, the app sends a short
+            mood description to Meta&apos;s image model, such as &quot;calm
+            and thoughtful&quot;, along with the image settings. The sentence
+            itself is not sent to Meta. The card&apos;s text is added by
+            Quotefinder.
+          </li>
+          <li>
             Error reports may include technical details about a failed
             request. We remove request content, headers, cookies, query
             strings, and keys before any report leaves our server.
@@ -84,7 +91,7 @@ export function PrivacyPage() {
         </h2>
         <ul className="mt-2 list-disc space-y-1 pl-6">
           <li>Google and YouTube: sign-in and access to your channel&apos;s captions.</li>
-          <li>Meta: AI models for matching and voice transcription.</li>
+          <li>Meta: AI models for matching, voice transcription, and share card backgrounds.</li>
           <li>Amazon Web Services: hosting.</li>
           <li>Sentry: error reports, when error reporting is turned on.</li>
         </ul>

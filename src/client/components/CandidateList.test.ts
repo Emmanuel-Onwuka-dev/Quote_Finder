@@ -25,7 +25,13 @@ describe("CandidateList", () => {
     const html = renderToStaticMarkup(
       createElement(CandidateList, {
         candidates: [
-          { url: "", title: "A video", creator: "Someone", reason: "" },
+          {
+            url: "",
+            title: "A video",
+            creator: "Someone",
+            publishedAt: "",
+            reason: "",
+          },
         ],
         notes: ["Matched the title and description."],
         publishedAt: "",

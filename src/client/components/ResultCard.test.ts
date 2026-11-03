@@ -2,13 +2,14 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { LocateResult } from "../hooks/useQuoteStream";
-import { ResultCard } from "./ResultCard";
+import { ResultCard, selectedMain } from "./ResultCard";
 
 function candidate(index: number) {
   return {
     url: `https://www.youtube.com/watch?v=video${index}`,
     title: `Match ${index}`,
     creator: `Creator ${index}`,
+    publishedAt: `2026-11-0${index}T00:00:00Z`,
     reason: `Reason ${index}`,
   };
 }
@@ -42,14 +43,13 @@ function render(count: number): string {
 }
 
 describe("ResultCard other matches", () => {
-  it("shows up to 4 more matches with title, date, stamp, and note", () => {
+  it("shows up to 4 more matches with title, creator, window, and note", () => {
     const html = render(5);
     expect(html).toContain("Other matches");
     expect(html).toContain("Match 1");
     expect(html).toContain("Match 4");
     expect(html).not.toContain("Match 5");
-    expect(html).toContain("2026-10-01");
-    expect(html).toContain("starts at 0:00");
+    expect(html).toContain("Creator 1 · any time");
     expect(html).toContain(
       "The exact moment this line is said has not been verified.",
     );
@@ -65,5 +65,33 @@ describe("ResultCard other matches", () => {
     const html = render(1);
     expect(html).toContain("Other matches");
     expect(html).toContain("Match 1");
+  });
+});
+
+describe("selectedMain", () => {
+  it("uses the selected runner-up's own date, never the main video's", () => {
+    const result = foundResult(2);
+    const main = selectedMain(result, 0);
+    expect(main.videoTitle).toBe("Match 1");
+    expect(main.publishedAt).toBe("2026-11-01T00:00:00Z");
+    expect(main.publishedAt).not.toBe(result.publishedAt);
+  });
+
+  it("shows no date when the selected runner-up has none", () => {
+    const result = foundResult(1);
+    const undated = {
+      ...result.candidates[0]!,
+      publishedAt: "",
+    };
+    const main = selectedMain(
+      { ...result, candidates: [undated] },
+      0,
+    );
+    expect(main.publishedAt).toBe("");
+  });
+
+  it("keeps the original result when nothing is selected", () => {
+    const result = foundResult(2);
+    expect(selectedMain(result, null)).toBe(result);
   });
 });

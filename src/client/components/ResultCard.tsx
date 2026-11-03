@@ -183,6 +183,30 @@ interface OtherMatch {
   index: number | null;
 }
 
+/** Main display for a selected Other match: the candidate's own video
+ * fields over the shared result. The date line uses the candidate's
+ * own publishedAt, never the original video's date. Pure. */
+export function selectedMain(
+  result: LocateResult,
+  selectedIndex: number | null,
+): LocateResult {
+  const selected =
+    selectedIndex === null
+      ? null
+      : (result.candidates[selectedIndex] ?? null);
+  if (selected === null) {
+    return result;
+  }
+  return {
+    ...result,
+    videoTitle: selected.title,
+    videoUrl: selected.url,
+    creator: selected.creator || result.creator,
+    publishedAt: selected.publishedAt,
+    context: selected.reason ? [selected.reason] : result.context,
+  };
+}
+
 export function ResultCard({ result, timeWindow }: ResultCardProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [copied, setCopied] = useState(false);
@@ -192,16 +216,7 @@ export function ResultCard({ result, timeWindow }: ResultCardProps) {
   const candidates = result.candidates;
   const selected =
     selectedIndex === null ? null : (candidates[selectedIndex] ?? null);
-  const main: LocateResult =
-    selected === null
-      ? result
-      : {
-          ...result,
-          videoTitle: selected.title,
-          videoUrl: selected.url,
-          creator: selected.creator || result.creator,
-          context: selected.reason ? [selected.reason] : result.context,
-        };
+  const main = selectedMain(result, selectedIndex);
   const others: OtherMatch[] = [];
   if (selected === null) {
     candidates.slice(0, 4).forEach((candidate, index) => {
@@ -381,7 +396,7 @@ export function ResultCard({ result, timeWindow }: ResultCardProps) {
             allowFullScreen
           />
           <p className="mt-2 font-mono text-sm text-muted">
-            Video · starts at 0:00
+            Video · {stampLabel}
           </p>
         </div>
       )}
@@ -390,7 +405,7 @@ export function ResultCard({ result, timeWindow }: ResultCardProps) {
           <h3 className="font-display text-lg font-bold">Other matches</h3>
           <ul className="mt-3 space-y-4">
             {others.map((item) => {
-              const meta = [item.creator, published, stampLabel]
+              const meta = [item.creator, timeWindow]
                 .filter(Boolean)
                 .join(" · ");
               return (

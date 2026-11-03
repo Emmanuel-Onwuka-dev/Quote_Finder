@@ -8,6 +8,7 @@ export interface QuoteCandidate {
   url: string;
   title: string;
   creator: string;
+  publishedAt: string;
   reason: string;
 }
 
@@ -106,6 +107,7 @@ function normalizeResult(data: Record<string, unknown>): LocateResult {
         url: asString(c.url),
         title: asString(c.title),
         creator: asString(c.creator),
+        publishedAt: asString(c.publishedAt),
         reason: asString(c.reason),
       };
     }),

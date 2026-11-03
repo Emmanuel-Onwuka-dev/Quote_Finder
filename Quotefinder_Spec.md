@@ -361,7 +361,7 @@ Expose the hook as `{ recording, transcribing, error, toggle }`. It also exposes
 - Input placeholder: "The line you remember, or say it out loud"
 - Status text:
   - "Listening… tap the square when you're done."
-  - "Writing down what you said…"
+  - "Muse Voice Transcribe is writing down what you said…"
 - The creator page search box also has the microphone button. It fills the creator search box, not the quote box.
 
 ---

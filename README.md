@@ -10,6 +10,46 @@ Built for the **Build for Your World** hackathon. All work on this project,
 including code, README, and spec, starts on Oct 27, 2026 and finishes by the
 Nov 4 deadline.
 
+## Run it yourself
+
+What you need: Node.js (current LTS; package.json pins no specific version)
+and two API keys: a Meta Model API key and a YouTube Data API key.
+
+Where to get the keys: get a Meta Model API key from the Meta Model API
+dashboard, and a YouTube Data API key from the Google Cloud Console with the
+YouTube Data API v3 enabled. Keys go only in your local `.env` file. Do not
+put keys in the README or commit them.
+
+Steps:
+
+```sh
+git clone https://github.com/Emmanuel-Onwuka-dev/Quote_Finder.git
+cd Quote_Finder
+cp .env.example .env   # add MODEL_API_KEY and YOUTUBE_API_KEY to .env
+npm install
+```
+
+Then run the server in one terminal and the client in another:
+
+```sh
+npm run dev:server     # API on :8787 (one terminal)
+npm run dev:client     # UI with /api proxy (another terminal)
+```
+
+Open the address the client prints in your browser.
+
+What works without extra setup: quote search, voice input (it uses the Meta
+key), and share cards.
+
+What needs more setup: the creator archive needs a Google OAuth client with a
+matching redirect URI. Judges can skip it and still test quote search end to
+end. The archive is for creators who sign in with their own channel so the app
+can index their captions.
+
+A hosted version is at https://quotefinder-emmanuelonwuka.duckdns.org. It runs
+the same code. Quote search works there. The creator archive works only for
+accounts added as test users.
+
 ## Platform policy
 
 This version does not scrape any platform and does not download any video or

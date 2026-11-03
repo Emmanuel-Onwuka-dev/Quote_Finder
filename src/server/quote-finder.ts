@@ -5,6 +5,7 @@
 import { z } from "zod";
 import type { ArchiveStore } from "./archive/store";
 import { loadConfig, requireKey } from "./config";
+import { createDailyCallBudget } from "./daily-budget";
 import { glimmerVariants } from "./glimmer";
 import { authHeaders, createLlmClient, type LlmClient } from "./llm-client";
 import { logError } from "./log";
@@ -28,6 +29,24 @@ const MEDIUM_AT = 0.55;
 const CANDIDATE_TARGET = 10;
 /** Runner-ups shown under a found result: at most this many. */
 const RUNNER_UP_CAP = 4;
+
+/** Daily cap on paid Muse Spark chat calls: a cost guard per process per UTC day. */
+export const SPARK_DAILY_CALL_LIMIT = 1000;
+
+/** Error message when the Spark daily budget is spent. Callers degrade. */
+export const SPARK_BUDGET_SPENT = "SPARK_BUDGET_SPENT";
+
+let sparkBudget = createDailyCallBudget(SPARK_DAILY_CALL_LIMIT, () => new Date());
+
+/** Take one Spark chat call from the daily budget. False when spent. */
+export function takeSparkCall(): boolean {
+  return sparkBudget.take();
+}
+
+/** Reset the Spark daily budget, with a fresh clock (tests). */
+export function resetSparkBudget(clock: () => Date = () => new Date()): void {
+  sparkBudget = createDailyCallBudget(SPARK_DAILY_CALL_LIMIT, clock);
+}
 const VERIFY_CONCURRENCY = 4;
 const VERIFY_TIMEOUT_MS = 8000;
 const MODEL_TIMEOUT_MS = 30000;
@@ -89,6 +108,7 @@ export interface QuoteCandidate {
   url: string;
   title: string;
   creator: string;
+  publishedAt: string;
   reason: string;
 }
 
@@ -143,6 +163,9 @@ async function chatText(
   system: string,
   user: string,
 ): Promise<string> {
+  if (!takeSparkCall()) {
+    throw new Error(SPARK_BUDGET_SPENT);
+  }
   const res = await fetchFn(`${client.baseUrl}/chat/completions`, {
     method: "POST",
     headers: authHeaders(client),
@@ -535,6 +558,7 @@ function padCandidates(
       url,
       title: hit.video.title,
       creator: channelOf(hit.video),
+      publishedAt: hit.video.publishedAt,
       reason: `Title/description match · ${shortDate(hit.video.publishedAt)}`,
     });
   }
@@ -551,6 +575,7 @@ function padCandidates(
       url,
       title: video.title,
       creator: channelOf(video),
+      publishedAt: video.publishedAt,
       reason: `Possible match · ${shortDate(video.publishedAt)}`,
     });
   }
@@ -739,6 +764,7 @@ export async function locateQuote(
         url,
         title: entry.video.title,
         creator: entry.video.channelTitle || engine.channelTitle || "YouTube",
+        publishedAt: entry.video.publishedAt,
         reason:
           reasons.get(url) ??
           `Title/description match · ${shortDate(entry.video.publishedAt)}`,
@@ -789,12 +815,16 @@ export async function locateQuote(
     if (deps.skipEngine) {
       throw new Error(SEARCH_QUOTA_SPENT);
     }
+    const sparkSpent =
+      error instanceof Error && error.message === SPARK_BUDGET_SPENT;
     const candidates = padCandidates(engine, []);
     const degradedNotes = [
       ...engineNotes,
       ...searchNotes,
       UNVERIFIED_NOTE,
-      "We could not answer from memory, so these results come only from title and description matches.",
+      sparkSpent
+        ? "Today's model limit is reached, so this answer uses title and description matches only."
+        : "We could not answer from memory, so these results come only from title and description matches.",
     ];
     if (candidates.length < CANDIDATE_TARGET) {
       degradedNotes.push(trustedCandidatesNote(candidates.length));
@@ -837,6 +867,8 @@ export async function locateQuote(
         url,
         title: candidate.title || url,
         creator: engine.channelTitle || "YouTube",
+        // The model gives no date.
+        publishedAt: "",
         reason: candidate.reason || "AI suggestion",
       });
     }

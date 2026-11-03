@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LlmClient } from "./llm-client";
 import {
+  SPARK_DAILY_CALL_LIMIT,
   fallbackAnswer,
   locateQuote,
   queryVariants,
   rankShortlist,
+  resetSparkBudget,
   selectRunnerUps,
   stamp,
+  takeSparkCall,
   trustedCandidatesNote,
   urlExists,
   verifyUrls,
@@ -234,12 +237,57 @@ describe("trustedCandidatesNote", () => {
   });
 });
 
+describe("Spark daily budget", () => {
+  it("refuses the 1001st chat call", () => {
+    resetSparkBudget(() => new Date("2026-10-30T12:00:00Z"));
+    try {
+      for (let i = 0; i < SPARK_DAILY_CALL_LIMIT; i++) {
+        expect(takeSparkCall()).toBe(true);
+      }
+      expect(takeSparkCall()).toBe(false);
+    } finally {
+      resetSparkBudget();
+    }
+  });
+
+  it("degrades without calling Meta once the budget is spent", async () => {
+    resetSparkBudget(() => new Date("2026-10-30T12:00:00Z"));
+    for (let i = 0; i < SPARK_DAILY_CALL_LIMIT; i++) {
+      takeSparkCall();
+    }
+    try {
+      const state = setup([]);
+      const result = await locateQuote(
+        {
+          quote: "xylophone zephyr nebula",
+          creator: "",
+          scene: "",
+          sinceDays: 0,
+        },
+        { llm: TEST_LLM, youtubeApiKey: "yt-key", fetchFn: fetch },
+      );
+      expect(
+        state.seen.filter((entry) => entry.includes("meta.test")),
+      ).toEqual([]);
+      expect(result.notes).toContain(
+        "Today's model limit is reached, so this answer uses title and description matches only.",
+      );
+      expect(result.notes.join(" ")).not.toContain(
+        "could not answer from memory",
+      );
+    } finally {
+      resetSparkBudget();
+    }
+  });
+});
+
 describe("selectRunnerUps", () => {
   const main = youtubeWatchUrl("main");
   const entry = (id: string) => ({
     url: youtubeWatchUrl(id),
     title: `Title ${id}`,
     creator: "Channel",
+    publishedAt: "2026-10-01T00:00:00Z",
     reason: "Reason",
   });
 
@@ -1248,6 +1296,27 @@ describe("locateQuote", () => {
     expect(result.candidates[0]?.reason.startsWith("Possible match")).toBe(
       true,
     );
+  });
+
+  it("carries each candidate's publishedAt from its video", async () => {
+    setup([
+      { status: 200, body: chatBody(VARIANTS_REPLY) },
+      { status: 200, body: chatBody(RANK_VID1_REPLY) },
+      { status: 500, body: {} },
+    ]);
+    const result = await locateQuote(
+      {
+        quote: "xylophone zephyr nebula",
+        creator: "",
+        scene: "",
+        sinceDays: 0,
+      },
+      { llm: TEST_LLM, youtubeApiKey: "yt-key", fetchFn: fetch },
+    );
+    expect(result.found).toBe(false);
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]?.url).toBe(youtubeWatchUrl("vid1"));
+    expect(result.candidates[0]?.publishedAt).toBe("2026-10-01T00:00:00Z");
   });
 
   it("appends Glimmer variants to the search queries", async () => {

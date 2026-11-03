@@ -326,6 +326,96 @@ describe("searchEverywhere time window", () => {
   });
 });
 
+describe("searchChannel time window", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const CHANNEL_ROUTE = {
+    items: [
+      {
+        id: "UCchan1",
+        snippet: { title: "Test Channel" },
+        contentDetails: { relatedPlaylists: { uploads: "UUchan1" } },
+      },
+    ],
+  };
+
+  function stubChannelSearch(playlist: unknown): void {
+    const fresh = new Date(Date.now() - 86_400_000).toISOString();
+    const stale = new Date(Date.now() - 30 * 86_400_000).toISOString();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = new URL(url).pathname;
+        if (path === "/youtube/v3/playlistItems" && playlist === "fail") {
+          return new Response("error", { status: 500 });
+        }
+        const routes: Record<string, unknown> = {
+          "/youtube/v3/channels": CHANNEL_ROUTE,
+          "/youtube/v3/playlistItems": playlist,
+          "/youtube/v3/search": {
+            items: [{ id: { videoId: "vidFresh" } }, { id: { videoId: "vidStale" } }],
+          },
+          "/youtube/v3/videos": {
+            items: [
+              {
+                id: "vidFresh",
+                snippet: {
+                  title: "Fresh upload",
+                  description: "",
+                  publishedAt: fresh,
+                  channelTitle: "Fresh Channel",
+                },
+              },
+              {
+                id: "vidStale",
+                snippet: {
+                  title: "Stale upload",
+                  description: "",
+                  publishedAt: stale,
+                  channelTitle: "Stale Channel",
+                },
+              },
+            ],
+          },
+        };
+        return new Response(
+          JSON.stringify(routes[path] ?? { items: [] }),
+          { status: 200 },
+        );
+      }),
+    );
+  }
+
+  function searchTestChannel() {
+    return searchChannel({
+      quote: "anything",
+      variants: [],
+      creator: "@tester",
+      sinceDays: 7,
+      apiKey: "test-key",
+      onProgress: () => {},
+    });
+  }
+
+  it("drops in-channel search hits older than the window before merging", async () => {
+    stubChannelSearch({ items: [] });
+    const result = await searchTestChannel();
+    expect(result.shortlist.map((video) => video.id)).toEqual(["vidFresh"]);
+    expect(result.hits.map((hit) => hit.video.id)).not.toContain("vidStale");
+    expect(result.scanned).toBe(1);
+  });
+
+  it("drops stale in-channel hits when the uploads index fails", async () => {
+    stubChannelSearch("fail");
+    const result = await searchTestChannel();
+    expect(result.shortlist.map((video) => video.id)).toEqual(["vidFresh"]);
+    expect(result.hits.map((hit) => hit.video.id)).not.toContain("vidStale");
+    expect(result.scanned).toBe(1);
+  });
+});
+
 describe("search result channel titles", () => {
   afterEach(() => {
     vi.unstubAllGlobals();

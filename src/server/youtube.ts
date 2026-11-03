@@ -465,7 +465,10 @@ export async function searchChannel(
       header.channelId,
       reserveQuota,
     );
-    const shortlist = mergeShortlist([], searched);
+    const shortlist = mergeShortlist(
+      [],
+      filterAfter(searched, publishedAfter),
+    );
     const hits = scorePool(quote, shortlist, onProgress, counter);
     return {
       shortlist,
@@ -484,7 +487,9 @@ export async function searchChannel(
     header.channelId,
     reserveQuota,
   );
-  const shortlist = mergeShortlist(ranked, searched);
+  // §7.6: the time window filters the in-channel results too,
+  // before they merge with the ranked index videos.
+  const shortlist = mergeShortlist(ranked, filterAfter(searched, publishedAfter));
   const hits = scorePool(quote, shortlist, onProgress, counter);
   return {
     shortlist,

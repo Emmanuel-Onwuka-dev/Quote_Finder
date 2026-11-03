@@ -4,6 +4,7 @@
 // client hook consumes this.
 
 import type { Context } from "hono";
+import { createDailyCallBudget } from "./daily-budget";
 import { logError } from "./log";
 
 export interface TranscribeDeps {
@@ -110,24 +111,7 @@ export function createTranscribeHandler(deps: TranscribeDeps) {
   const fetchFn = deps.fetchFn ?? fetch;
   const sleep = deps.sleep ?? defaultSleep;
   const clock = deps.now ?? (() => new Date());
-  // Daily call counter, keyed by UTC date. Kept in memory: it resets on
-  // server restart and is per process, so this is a cost guard, not a
-  // security control.
-  const budget = { day: "", count: 0 };
-  // True (and counted) when a Meta call may proceed; resets the count
-  // when the UTC date rolls over.
-  const takeBudget = (): boolean => {
-    const day = clock().toISOString().slice(0, 10);
-    if (budget.day !== day) {
-      budget.day = day;
-      budget.count = 0;
-    }
-    if (budget.count >= TRANSCRIBE_DAILY_CALL_LIMIT) {
-      return false;
-    }
-    budget.count += 1;
-    return true;
-  };
+  const budget = createDailyCallBudget(TRANSCRIBE_DAILY_CALL_LIMIT, clock);
   return async (c: Context): Promise<Response> => {
     let body: Record<string, string | File>;
     try {
@@ -169,7 +153,7 @@ export function createTranscribeHandler(deps: TranscribeDeps) {
     let rateLimitedAttempts = 0;
     let serverErrorAttempts = 0;
     for (;;) {
-      if (!takeBudget()) {
+      if (!budget.take()) {
         return c.json(
           { message: "Voice input is busy today, type the line instead." },
           429,

@@ -6,6 +6,7 @@
 
 import { z } from "zod";
 import type { Context } from "hono";
+import { createDailyCallBudget } from "./daily-budget";
 import { logError } from "./log";
 
 export interface QuoteCardDeps {
@@ -226,24 +227,7 @@ function cardPrompt(sentence: string): string {
 export function createQuoteCardHandler(deps: QuoteCardDeps) {
   const fetchFn = deps.fetchFn ?? fetch;
   const clock = deps.now ?? (() => new Date());
-  // Daily call counter, keyed by UTC date. Kept in memory: it resets on
-  // server restart and is per process, so this is a cost guard, not a
-  // security control.
-  const budget = { day: "", count: 0 };
-  // True (and counted) when a Meta call may proceed; resets the count
-  // when the UTC date rolls over.
-  const takeBudget = (): boolean => {
-    const day = clock().toISOString().slice(0, 10);
-    if (budget.day !== day) {
-      budget.day = day;
-      budget.count = 0;
-    }
-    if (budget.count >= QUOTE_CARD_DAILY_CALL_LIMIT) {
-      return false;
-    }
-    budget.count += 1;
-    return true;
-  };
+  const budget = createDailyCallBudget(QUOTE_CARD_DAILY_CALL_LIMIT, clock);
   return async (c: Context): Promise<Response> => {
     let raw: unknown;
     try {
@@ -261,7 +245,7 @@ export function createQuoteCardHandler(deps: QuoteCardDeps) {
     if (!deps.modelApiKey) {
       return c.json({ message: "Missing server env MODEL_API_KEY." }, 500);
     }
-    if (!takeBudget()) {
+    if (!budget.take()) {
       return c.json({ message: "Share cards are busy today." }, 429);
     }
     let res: Response;

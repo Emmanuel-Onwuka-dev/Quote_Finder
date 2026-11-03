@@ -164,6 +164,12 @@ export default function App() {
             onSubmit={startSearch}
           />
         </div>
+
+        <footer className="pb-6 text-center">
+          <a href="/privacy" className="text-sm text-accent underline">
+            Privacy
+          </a>
+        </footer>
       </div>
     </div>
   );

@@ -82,7 +82,7 @@ describe("POST /api/quote-card", () => {
       n: number;
     };
     expect(forwarded.model).toBe("test-image");
-    expect(forwarded.prompt).toContain("calm and thoughtful");
+    expect(forwarded.prompt).toContain(moodFor("never give up"));
     expect(forwarded.prompt).not.toContain("never give up");
     expect(forwarded.size).toBe("1792x1024");
     expect(forwarded.n).toBe(1);
@@ -96,7 +96,7 @@ describe("POST /api/quote-card", () => {
       prompt: string;
     };
     expect(forwarded.prompt).toContain("No text");
-    expect(forwarded.prompt).toContain("calm and thoughtful");
+    expect(forwarded.prompt).toContain(moodFor("never give up"));
     expect(forwarded.prompt).not.toContain("never give up");
     expect(forwarded.prompt).not.toContain("Design an elegant");
     expect(forwarded.prompt).not.toContain("Display this exact text");
@@ -121,7 +121,7 @@ describe("POST /api/quote-card", () => {
       prompt: string;
     };
     expect(forwarded.prompt).toContain("No text");
-    expect(forwarded.prompt).toContain("calm and thoughtful");
+    expect(forwarded.prompt).toContain(moodFor("xylophone zephyr quantum"));
     expect(forwarded.prompt).not.toContain("xylophone zephyr quantum");
     expect(forwarded.prompt).not.toContain("xylophone");
   });
@@ -215,16 +215,30 @@ describe("moodFor", () => {
     expect(moodFor("I miss you, goodbye")).toBe("quiet and melancholy");
     expect(moodFor("we laughed with joy")).toBe("warm and joyful");
     expect(moodFor("hope at dawn")).toBe("hopeful and serene");
-    expect(moodFor("never give up")).toBe("calm and thoughtful");
   });
 
   it("matches whole words only", () => {
-    expect(moodFor("a runner passes by")).toBe("calm and thoughtful");
+    expect(moodFor("a runner passes by")).not.toBe("tense and dramatic");
     expect(moodFor("RUN FOR YOUR LIFE")).toBe("tense and dramatic");
   });
 
   it("returns the tense mood for a widened keyword", () => {
     expect(moodFor("keep running")).toBe("tense and dramatic");
+  });
+
+  it("varies the fallback mood by sentence, deterministically", () => {
+    expect(moodFor("never give up")).toBe(moodFor("never give up"));
+    const moods = new Set(
+      [
+        "never give up",
+        "xylophone zephyr quantum",
+        "the cat sat on the mat",
+        "a runner passes by",
+        "purple pencils ponder quietly",
+        "seven stones in a circle",
+      ].map((sentence) => moodFor(sentence)),
+    );
+    expect(moods.size).toBeGreaterThan(1);
   });
 });
 

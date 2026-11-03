@@ -45,9 +45,21 @@ const GenerationsSchema = z.object({
     .min(1),
 });
 
+/** Fallback moods for sentences that match no keyword. Every entry
+ * has a scene list below, so any pick renders. */
+const FALLBACK_MOODS = [
+  "tense and dramatic",
+  "quiet and melancholy",
+  "warm and joyful",
+  "hopeful and serene",
+  "calm and thoughtful",
+];
+
 /** Background mood from sentence keywords, checked in order. Whole
- * words only, so "running" never matches "run". Pure and total: any
- * sentence without a keyword gets the calm default. */
+ * words only, so "running" never matches "run". Sentences without
+ * a keyword get a fallback mood picked by a stable hash of the
+ * sentence, so the same sentence always gets the same mood and
+ * different sentences usually differ. Pure and total. */
 export function moodFor(sentence: string): string {
   const moods: Array<{ mood: string; keywords: string[] }> = [
     {
@@ -130,7 +142,10 @@ export function moodFor(sentence: string): string {
       }
     }
   }
-  return "calm and thoughtful";
+  return (
+    FALLBACK_MOODS[hash32(sentence) % FALLBACK_MOODS.length] ??
+    "calm and thoughtful"
+  );
 }
 
 /** Fixed background scenes per mood: quiet landscapes and still

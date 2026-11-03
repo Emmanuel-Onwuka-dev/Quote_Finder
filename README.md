@@ -1,10 +1,24 @@
 # Quotefinder
 
+## The problem
+
+You remember a line from a video but not the video itself. YouTube search
+matches titles and descriptions, not what is said in the video, so a line
+you half-remember is hard to find. Quotefinder searches titles and
+descriptions through YouTube's official API. It uses Meta's models to turn
+a fuzzy memory into search wordings and to rank the matches, and it shows
+only links it has checked. Creators can also search the captions of their
+own videos, to find the moment they said something. Caption text is shown
+only to that creator.
+
 Type or speak a line you remember from a video. Quotefinder searches the
 creator's real YouTube uploads (or the wider YouTube catalogue when no creator
 is given), matches the line against titles and descriptions, and returns the
-matching video with an embedded player. Timestamps are not verified in this
-version. The app does not read transcripts.
+matching video with an embedded player. Quote search matches titles and
+descriptions and does not read transcripts, so its timestamps are not
+verified. The creator archive reads captions only for the signed-in
+creator's own videos, returns timestamps verified from those captions,
+and shows caption text only to that creator.
 
 Built for the **Build for Your World** hackathon. All work on this project,
 including code, README, and spec, starts on Oct 27, 2026 and finishes by the
@@ -12,7 +26,7 @@ Nov 4 deadline.
 
 ## Run it yourself
 
-What you need: Node.js (current LTS; package.json pins no specific version)
+What you need: Node.js (version 20 or later)
 and two API keys: a Meta Model API key and a YouTube Data API key.
 
 Where to get the keys: get a Meta Model API key from the Meta Model API
@@ -66,8 +80,9 @@ this version does not depend on that answer.
 
 **Used in the live app:**
 
-- Muse Spark (`TEXT_MODEL`, default `muse-spark-1.3`): query variants and
-  ranking. Endpoint: `POST {META_BASE_URL}/chat/completions`
+- Muse Spark (`TEXT_MODEL`, default `muse-spark-1.3`): query variants,
+  ranking, and answers from memory when nothing verifies. Endpoint:
+  `POST {META_BASE_URL}/chat/completions`
 - Muse Voice Transcribe (`TRANSCRIPTION_MODEL`, default
   `muse-voice-transcribe-1.0`): voice input. Endpoint:
   `POST {META_BASE_URL}/asr/transcribe`
@@ -140,6 +155,14 @@ this version does not depend on that answer.
   verifies, plus plain-language notes.
 - P12: quote-card daily cap of 500 per process, with the AI-generated
   label.
+- P13: time window applied to in-channel search results as well as the
+  uploads index, with a test. Muse Spark chat cap (1000 per UTC day per
+  process), with a test.
+- P14: one terminal line per Meta call (model, path, status, duration),
+  with no host, query string, or key.
+- P15: progress labels name the Meta model at each step.
+- P16: runner-up matches show their own date. Selecting a runner-up
+  shows that video's date, not the main video's.
 
 ## External services and libraries
 
@@ -168,6 +191,10 @@ Heavy testing day? Raise the daily search quota for the server session
 ```powershell
 $env:SEARCH_BUDGET_UNITS="10000"   # same terminal, before npm run dev:server
 ```
+
+Muse Spark chat calls have their own cap of 1000 per UTC day per server
+process. When it is reached, search still runs on title and description
+matches, and the result says that the model limit is reached.
 
 Errors are logged to the server console with the step name. If
 SENTRY_DSN is set, they are also sent to Sentry, with request bodies,

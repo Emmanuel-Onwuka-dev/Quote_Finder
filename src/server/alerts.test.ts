@@ -63,12 +63,12 @@ describe("beforeSend", () => {
         query_string: "q=remembered+line",
       },
       user: { id: "user-1" },
-      extra: { apiKey: "sk-live-abc", status: 502, quoteLength: 15 },
+      extra: { apiKey: "not-a-real-key", status: 502, quoteLength: 15 },
       exception: {
         values: [
           {
             type: "Error",
-            value: "boom ?token=abcdef0123456789abcdef0123456789",
+            value: "boom ?token=placeholder-token-value",
           },
         ],
       },
@@ -92,7 +92,7 @@ describe("beforeSend", () => {
     expect(out?.extra?.["status"]).toBe(502);
     expect(out?.extra?.["quoteLength"]).toBe(15);
     const excValue = String(out?.exception?.values?.[0]?.value ?? "");
-    expect(excValue).not.toContain("token=abcdef");
+    expect(excValue).not.toContain("token=placeholder-token-value");
     expect(excValue).toContain("[redacted]");
     const crumb = out?.breadcrumbs?.[0];
     expect(String(crumb?.message)).not.toContain("key=FAKE_TEST_KEY_NOT_REAL");

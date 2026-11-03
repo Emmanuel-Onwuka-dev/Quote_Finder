@@ -9,13 +9,13 @@ describe("logError", () => {
   it("redacts key-looking values in context", () => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     logError("quote card", new Error("boom"), {
-      apiKey: "sk-live-abc123",
+      apiKey: "not-a-real-key",
       status: 502,
     });
     expect(errors).toHaveBeenCalledTimes(1);
     const line = String(errors.mock.calls[0]?.[0]);
     expect(line).toContain("[quotefinder] quote card failed: boom");
-    expect(line).not.toContain("sk-live-abc123");
+    expect(line).not.toContain("not-a-real-key");
     expect(line).toContain("[redacted]");
     expect(line).toContain("502");
   });

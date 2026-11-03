@@ -176,4 +176,4 @@ empty to turn this off.
 
 ## Licence
 
-This project is licensed under the MIT Licence. See LICENSE.
+This project is licensed under the MIT Licence. See [LICENSE](LICENSE).

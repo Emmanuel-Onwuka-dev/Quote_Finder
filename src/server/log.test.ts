@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { logError } from "./log";
+import { logError, logMetaCall } from "./log";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -35,5 +35,39 @@ describe("logError", () => {
     const line = String(errors.mock.calls[0]?.[0]);
     expect(line).not.toContain("code=abc");
     expect(line).toContain("[redacted]");
+  });
+});
+
+describe("logMetaCall", () => {
+  it("prints model, path, status, and duration on one line", () => {
+    const logs = vi.spyOn(console, "log").mockImplementation(() => {});
+    logMetaCall("muse-spark-1.3", "/chat/completions", 200, Date.now() - 1400);
+    expect(logs).toHaveBeenCalledTimes(1);
+    expect(String(logs.mock.calls[0]?.[0])).toMatch(
+      /^\[meta\] muse-spark-1\.3 \/chat\/completions 200 1\.4s$/,
+    );
+  });
+
+  it("prints failed when the request never got a response", () => {
+    const logs = vi.spyOn(console, "log").mockImplementation(() => {});
+    logMetaCall("muse-spark-1.3", "/chat/completions", 0, Date.now());
+    const line = String(logs.mock.calls[0]?.[0]);
+    expect(line).toContain("failed");
+    expect(line).not.toContain(" 0 ");
+  });
+
+  it("never prints the host, a query string, or a key value", () => {
+    const logs = vi.spyOn(console, "log").mockImplementation(() => {});
+    logMetaCall(
+      "muse-spark-1.3",
+      "https://meta.test/v1/chat/completions?key=not-a-real-key",
+      200,
+      Date.now(),
+    );
+    const line = String(logs.mock.calls[0]?.[0]);
+    expect(line).toContain("/chat/completions");
+    expect(line).not.toContain("meta.test");
+    expect(line).not.toContain("?");
+    expect(line).not.toContain("not-a-real-key");
   });
 });

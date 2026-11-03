@@ -46,6 +46,27 @@ function scrubContext(
   return clean;
 }
 
+/** Keep only the path of an endpoint, dropping any host or query string. */
+function pathOnly(endpoint: string): string {
+  const noHost = endpoint.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/?#]*/, "");
+  const cut = noHost.search(/[?#]/);
+  return cut < 0 ? noHost : noHost.slice(0, cut);
+}
+
+/** One terminal line per Meta call: model, path, status, duration.
+ * Prints no host, query string, headers, body, or key. Status 0
+ * means the request failed before a response. */
+export function logMetaCall(
+  model: string,
+  endpoint: string,
+  status: number,
+  startedAt: number,
+): void {
+  const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
+  const result = status === 0 ? "failed" : String(status);
+  console.log(`[meta] ${model} ${pathOnly(endpoint)} ${result} ${seconds}s`);
+}
+
 export function logError(
   step: string,
   error: unknown,

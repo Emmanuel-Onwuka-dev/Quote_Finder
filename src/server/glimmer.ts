@@ -6,7 +6,7 @@
 // no URL is configured.
 
 import { z } from "zod";
-import { logError } from "./log";
+import { logError, logMetaCall } from "./log";
 
 export interface GlimmerDeps {
   openModelUrl: string;
@@ -58,20 +58,29 @@ export async function glimmerVariants(
   if (!base) {
     return [];
   }
+  const model = deps.model ?? GLIMMER_DEFAULT_MODEL;
   try {
     const fetchFn = deps.fetchFn ?? fetch;
-    const res = await fetchFn(`${base}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: deps.model ?? GLIMMER_DEFAULT_MODEL,
-        messages: [
-          { role: "system", content: GLIMMER_SYSTEM },
-          { role: "user", content: `Quote: ${quote}` },
-        ],
-      }),
-      signal: AbortSignal.timeout(deps.timeoutMs ?? GLIMMER_TIMEOUT_MS),
-    });
+    const startedAt = Date.now();
+    let res: Response;
+    try {
+      res = await fetchFn(`${base}/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: GLIMMER_SYSTEM },
+            { role: "user", content: `Quote: ${quote}` },
+          ],
+        }),
+        signal: AbortSignal.timeout(deps.timeoutMs ?? GLIMMER_TIMEOUT_MS),
+      });
+    } catch (error) {
+      logMetaCall(model, "/chat/completions", 0, startedAt);
+      throw error;
+    }
+    logMetaCall(model, "/chat/completions", res.status, startedAt);
     if (!res.ok) {
       return [];
     }

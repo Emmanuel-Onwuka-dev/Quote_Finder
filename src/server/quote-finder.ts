@@ -8,7 +8,7 @@ import { loadConfig, requireKey } from "./config";
 import { createDailyCallBudget } from "./daily-budget";
 import { glimmerVariants } from "./glimmer";
 import { authHeaders, createLlmClient, type LlmClient } from "./llm-client";
-import { logError } from "./log";
+import { logError, logMetaCall } from "./log";
 import {
   CHANNELS_LIST_COST,
   PLAYLIST_ITEMS_COST,
@@ -166,18 +166,26 @@ async function chatText(
   if (!takeSparkCall()) {
     throw new Error(SPARK_BUDGET_SPENT);
   }
-  const res = await fetchFn(`${client.baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: authHeaders(client),
-    body: JSON.stringify({
-      model: client.textModel,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-    }),
-    signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
-  });
+  const startedAt = Date.now();
+  let res: Response;
+  try {
+    res = await fetchFn(`${client.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: authHeaders(client),
+      body: JSON.stringify({
+        model: client.textModel,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+      }),
+      signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
+    });
+  } catch (error) {
+    logMetaCall(client.textModel, "/chat/completions", 0, startedAt);
+    throw error;
+  }
+  logMetaCall(client.textModel, "/chat/completions", res.status, startedAt);
   if (!res.ok) {
     throw new Error(`Meta Model API error ${res.status}`);
   }

@@ -7,7 +7,7 @@
 import { z } from "zod";
 import type { Context } from "hono";
 import { createDailyCallBudget } from "./daily-budget";
-import { logError } from "./log";
+import { logError, logMetaCall } from "./log";
 
 export interface QuoteCardDeps {
   modelApiKey: string;
@@ -249,6 +249,7 @@ export function createQuoteCardHandler(deps: QuoteCardDeps) {
       return c.json({ message: "Share cards are busy today." }, 429);
     }
     let res: Response;
+    const startedAt = Date.now();
     try {
       res = await fetchFn(`${deps.metaBaseUrl}/images/generations`, {
         method: "POST",
@@ -264,9 +265,11 @@ export function createQuoteCardHandler(deps: QuoteCardDeps) {
         }),
       });
     } catch (error) {
+      logMetaCall(deps.imageModel, "/images/generations", 0, startedAt);
       logError("quote card", error);
       return c.json({ message: "quote card request failed" }, 502);
     }
+    logMetaCall(deps.imageModel, "/images/generations", res.status, startedAt);
     if (!res.ok) {
       return c.json({ message: `quote card failed (${res.status})` }, 502);
     }

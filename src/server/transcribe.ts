@@ -5,7 +5,7 @@
 
 import type { Context } from "hono";
 import { createDailyCallBudget } from "./daily-budget";
-import { logError } from "./log";
+import { logError, logMetaCall } from "./log";
 
 export interface TranscribeDeps {
   modelApiKey: string;
@@ -160,6 +160,7 @@ export function createTranscribeHandler(deps: TranscribeDeps) {
         );
       }
       let res: Response;
+      const startedAt = Date.now();
       try {
         res = await fetchFn(url, {
           method: "POST",
@@ -167,9 +168,11 @@ export function createTranscribeHandler(deps: TranscribeDeps) {
           body: form,
         });
       } catch (error) {
+        logMetaCall(deps.transcriptionModel, "/asr/transcribe", 0, startedAt);
         logError("transcribe", error);
         return c.json({ message: "transcription request failed" }, 502);
       }
+      logMetaCall(deps.transcriptionModel, "/asr/transcribe", res.status, startedAt);
       if (res.status === 429) {
         const delay = RETRY_429_DELAYS_MS[rateLimitedAttempts];
         if (delay === undefined) {

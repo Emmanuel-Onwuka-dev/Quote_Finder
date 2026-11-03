@@ -55,6 +55,7 @@ export default function App() {
 
   const startSearch = useCallback(
     (input: SearchInput) => {
+      if (running) return;
       const id = nextId.current++;
       const timeWindow = timeWindowLabel(input.sinceDays);
       setComposerError(null);
@@ -120,7 +121,7 @@ export default function App() {
         },
       });
     },
-    [start, updateTurn],
+    [start, updateTurn, running],
   );
 
   const clearHistory = useCallback(() => {

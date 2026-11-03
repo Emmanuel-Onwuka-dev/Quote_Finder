@@ -172,7 +172,9 @@ $env:SEARCH_BUDGET_UNITS="10000"   # same terminal, before npm run dev:server
 Errors are logged to the server console with the step name. If
 SENTRY_DSN is set, they are also sent to Sentry, with request bodies,
 headers, cookies, query strings, and keys removed. Leave SENTRY_DSN
-empty to turn this off.
+empty to turn this off. Note: the Sentry dependency chain has known
+moderate advisories (glob, minimatch); the app does not pass user
+input to glob or minimatch, and it will be upgraded after the hackathon.
 
 ## Licence
 

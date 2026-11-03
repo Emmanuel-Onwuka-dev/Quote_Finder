@@ -25,7 +25,7 @@ Quotefinder is a web app. A user types or speaks a line they remember from a vid
 
 Quotefinder also has a creator archive (section 13A). A creator with a YouTube channel signs in with Google, connects their own channel, and searches the captions of their own uploads. Caption text is only ever shown to that creator.
 
-When a YouTube search can run, the app returns at least 10 verified candidate links, or says plainly that it could not verify enough. When the search quota is spent and no candidate can be verified, the app says so plainly and shows no links. It never shows unverified links as results, and it never guesses a URL.
+When a YouTube search can run, the app returns at least 10 verified candidate links, or says plainly that it could not verify enough (see sections 7.4 and 7.5).
 
 ---
 
@@ -245,7 +245,7 @@ Stream the ranking and fallback calls to `TEXT_MODEL` through the Meta Model API
 - A `sceneLine` gives the scene description as a disambiguator.
 - A `whenLine` gives the human-readable window and tells the model to return nothing older. Use these labels: "the last 24 hours", "7 days", "30 days", "2 months", "6 months", "the last year".
 - Provide the real fetched catalogue: shortlist titles, descriptions, and URLs. The model must choose only from real URLs.
-- **Ask for 10 plausible candidate videos with real, watchable URLs when unsure.** The app returns at least 10 verified candidate links when a YouTube search can run, or says plainly that it could not verify enough. When the search quota is spent and no candidate can be verified, the app says so plainly and shows no links. It never shows unverified links as results, and it never guesses a URL.
+- **Ask for 10 plausible candidate videos with real, watchable URLs when unsure.** The app returns at least 10 verified candidate links when a YouTube search can run, or says plainly that it could not verify enough (see sections 7.4 and 7.5).
 - Say that this is an estimate from memory, not a verified match.
 - Reply with a single JSON object with these fields:
   `found`, `confidence`, `videoUrl`, `videoTitle`, `publishedAt`, `startTime`, `endTime`, `fullSentence`, `context`, `notes`, `candidates[]`
@@ -275,6 +275,7 @@ Trust rules:
   - If the main link is dead, clear the answer: `found = false`, with an explanatory note.
   - Remove dead candidates and note how many were dropped.
   - Pad the final list back to 10 from trusted sources.
+- It never shows unverified links as results, and it never guesses a URL.
 
 ### 7.6 Time window
 
@@ -285,7 +286,7 @@ Map `sinceDays` to a `publishedAfter` ISO date. Accepted values: `0` (any time),
 These extend the core flow. They are optional, but they show more of the Meta stack. Build them only after the core path works.
 
 - **Muse Glimmer query rephrasing (open weights).** This adds to the Muse Spark variants in section 7.3, step 1. Ask a locally served Muse Glimmer model (`OPEN_MODEL_URL`) for 3 to 5 more wordings of the remembered line, and add them to the search queries in section 5.4. Glimmer is Apache 2.0 and runs on your own hardware with vLLM, SGLang, llama.cpp, or ExecuTorch. If `OPEN_MODEL_URL` is unset, only the Muse Spark variants are used. Glimmer is off unless OPEN_MODEL_URL points to a server you can reach. It runs on your own machine, so the hosted version leaves OPEN_MODEL_URL empty and uses Muse Spark variants only. Set OPEN_MODEL_NAME if your server uses a model name other than glimmer.
-- **Muse Image quote card.** For each found result, call `POST ${META_BASE_URL}/images/generations` with model `IMAGE_MODEL` for an abstract background with no text in it; the app draws the exact full sentence and a footer on top in the browser, the card is hidden if the background call or the drawing fails, and the 500-calls-per-UTC-day cap still applies. The background mood is chosen from a short keyword list in the sentence. Sentences with no mood keyword get one of the fixed moods, chosen by a stable hash of the sentence, so the same sentence always gets the same mood. The sentence itself is never sent to the image model. The background scene is chosen from a fixed list for each mood, using a stable hash of the sentence. The sentence itself is never sent to the image model.
+- **Muse Image quote card.** For each found result, call `POST ${META_BASE_URL}/images/generations` with model `IMAGE_MODEL` for an abstract background with no text in it; the app draws the exact full sentence and a footer on top in the browser, the card is hidden if the background call or the drawing fails, and the 500-calls-per-UTC-day cap still applies. The background mood is chosen from a short keyword list in the sentence. Sentences with no mood keyword get one of the fixed moods, chosen by a stable hash of the sentence, so the same sentence always gets the same mood. The background scene is chosen from a fixed list for each mood, using a stable hash of the sentence. The sentence itself is never sent to the image model.
 - **Muse Code.** The project is built with Muse Code, Meta's coding agent. This is a build tool, not a runtime dependency. Name it in the README.
 
 ---
@@ -450,11 +451,11 @@ In the browser, confirm:
 ## 13. Behavior to preserve
 
 - **YouTube** gets official-API search, title and description matching, and Muse Spark query variants and ranking. Timestamps are not verified in this version.
-- **No scraping, transcripts, or downloads.** Playback uses the official embedded player only. The creator archive is the only exception to the no-captions rule, and only under section 13A.
+- **No scraping, transcripts, or downloads.** Playback uses the official embedded player only (see section 13A).
 - **Instagram, TikTok, and Facebook are not supported** in this version.
 - Matching is loose on wording and strict on substance (the `keyCoverage` guard).
 - Time windows filter the YouTube engine and the AI prompt, and appear in every turn's header.
-- When a YouTube search can run, the app returns at least 10 verified candidate links when it is not confident, or says plainly that it could not verify enough. When the search quota is spent and no candidate can be verified, it says so plainly and shows no links. It never shows unverified links as results, and it never guesses a URL.
+- When a YouTube search can run, the app returns at least 10 verified candidate links when it is not confident, or says plainly that it could not verify enough (see sections 7.4 and 7.5).
 - Credentials are entered only through the platform's secret store, never in chat or source code.
 
 ---

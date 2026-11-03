@@ -144,8 +144,8 @@ this version does not depend on that answer.
 ## External services and libraries
 
 - YouTube Data API v3, YouTube oEmbed, YouTube embedded player.
-- Meta Model API (Muse Spark, Muse Voice Transcribe; optionally Muse Image,
-  Muse Glimmer).
+- Meta Model API (Muse Spark, Muse Voice Transcribe, Muse Image;
+  optionally Muse Glimmer).
 - React, Vite, Tailwind CSS, Hono, Zod, Vitest, tsx.
 
 ## Development

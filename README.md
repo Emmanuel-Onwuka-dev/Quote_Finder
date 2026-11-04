@@ -217,9 +217,7 @@ reached.
 Errors are logged to the server console with the step name. If
 SENTRY_DSN is set, they are also sent to Sentry, with request bodies,
 headers, cookies, query strings, and keys removed. Leave SENTRY_DSN
-empty to turn this off. Note: the Sentry dependency chain has known
-moderate advisories (glob, minimatch); the app does not pass user
-input to glob or minimatch, and it will be upgraded after the hackathon.
+empty to turn this off.
 
 ## Known limitations
 
@@ -251,8 +249,6 @@ input to glob or minimatch, and it will be upgraded after the hackathon.
 - Muse Glimmer adds extra search wordings, but only from a
   Glimmer server on your own machine. The hosted site leaves
   it off.
-- The Sentry chain note under Development still stands: its
-  advisories wait until after the hackathon.
 
 ## Licence
 

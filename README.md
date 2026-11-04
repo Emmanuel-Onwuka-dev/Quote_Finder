@@ -113,7 +113,7 @@ this version does not depend on that answer.
 
 **Build tool** (not a runtime dependency):
 
-- Coding agent: built with **Muse Code**.
+- Built with **Muse Code**, Meta's coding agent. Reviewed with Claude, by Anthropic.
 
 ## Original work (built during the hackathon)
 

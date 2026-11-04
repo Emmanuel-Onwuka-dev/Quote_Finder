@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProgressUpdate } from "../hooks/useQuoteStream";
 import { useVoiceInput } from "../hooks/use-voice-input";
 import { formatDate } from "../lib/format";
+import { selectAllNeedingIndex } from "../lib/select";
 import { createSseParser } from "../lib/sse";
 import {
   ArchiveResultCard,
@@ -41,6 +42,10 @@ interface IndexSummary {
   message: string;
   spentUnits: number;
 }
+
+// The server index schema takes at most 200 video IDs per request, so
+// larger selections are sent in batches of this size, one after another.
+const MAX_IDS_PER_REQUEST = 200;
 
 export function CreatorPage() {
   const [status, setStatus] = useState<ArchiveStatus | null>(null);
@@ -413,6 +418,59 @@ function CreatorIndexing({
     });
   };
 
+  const runBatch = async (batch: string[]): Promise<IndexSummary | null> => {
+    const res = await fetch("/api/archive/index", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channelId, videoIds: batch }),
+    });
+    if (!res.ok || !res.body) {
+      let message = `request failed (${res.status})`;
+      try {
+        const data = (await res.json()) as { message?: string };
+        if (data.message) {
+          message = data.message;
+        }
+      } catch {
+        // Keep the status fallback.
+      }
+      throw new Error(message);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    const parser = createSseParser();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (cancelledRef.current) {
+        await reader.cancel().catch(() => {});
+        return null;
+      }
+      if (done) {
+        break;
+      }
+      for (const evt of parser.feed(decoder.decode(value, { stream: true }))) {
+        if (evt.event === "progress") {
+          const data = JSON.parse(evt.data) as {
+            stage?: string;
+            detail?: string;
+          };
+          setProgress((prev) => [
+            ...prev,
+            { stage: data.stage ?? "", detail: data.detail ?? "" },
+          ]);
+        } else if (evt.event === "result") {
+          const summary = JSON.parse(evt.data) as IndexSummary;
+          await reader.cancel().catch(() => {});
+          return summary;
+        } else if (evt.event === "error") {
+          const data = JSON.parse(evt.data) as { message?: string };
+          throw new Error(data.message || "Indexing failed");
+        }
+      }
+    }
+    throw new Error("Indexing ended without a result");
+  };
+
   const runIndex = async () => {
     const ids =
       videos?.filter((video) => selected.has(video.id)).map((v) => v.id) ?? [];
@@ -423,60 +481,44 @@ function CreatorIndexing({
     setProgress([]);
     setSummary(null);
     setRunError(null);
+    const merged: IndexSummary = {
+      indexed: [],
+      skipped: [],
+      paused: false,
+      message: "",
+      spentUnits: 0,
+    };
+    let finishedBatches = 0;
     try {
-      const res = await fetch("/api/archive/index", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channelId, videoIds: ids }),
-      });
-      if (!res.ok || !res.body) {
-        let message = `request failed (${res.status})`;
-        try {
-          const data = (await res.json()) as { message?: string };
-          if (data.message) {
-            message = data.message;
-          }
-        } catch {
-          // Keep the status fallback.
-        }
-        throw new Error(message);
-      }
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      const parser = createSseParser();
-      for (;;) {
-        const { done, value } = await reader.read();
+      for (let start = 0; start < ids.length; start += MAX_IDS_PER_REQUEST) {
         if (cancelledRef.current) {
-          await reader.cancel().catch(() => {});
           return;
         }
-        if (done) {
+        const batch = ids.slice(start, start + MAX_IDS_PER_REQUEST);
+        const batchSummary = await runBatch(batch);
+        if (batchSummary === null) {
+          return;
+        }
+        merged.indexed.push(...batchSummary.indexed);
+        merged.skipped.push(...batchSummary.skipped);
+        merged.spentUnits = batchSummary.spentUnits;
+        finishedBatches += 1;
+        if (batchSummary.paused) {
+          merged.paused = true;
+          merged.message = batchSummary.message;
           break;
         }
-        for (const evt of parser.feed(decoder.decode(value, { stream: true }))) {
-          if (evt.event === "progress") {
-            const data = JSON.parse(evt.data) as {
-              stage?: string;
-              detail?: string;
-            };
-            setProgress((prev) => [
-              ...prev,
-              { stage: data.stage ?? "", detail: data.detail ?? "" },
-            ]);
-          } else if (evt.event === "result") {
-            setSummary(JSON.parse(evt.data) as IndexSummary);
-            onDone();
-            await loadVideos(undefined);
-            await reader.cancel().catch(() => {});
-            return;
-          } else if (evt.event === "error") {
-            const data = JSON.parse(evt.data) as { message?: string };
-            throw new Error(data.message || "Indexing failed");
-          }
-        }
       }
+      setSummary(merged);
+      onDone();
+      await loadVideos(undefined);
     } catch (error) {
       if (!cancelledRef.current) {
+        if (finishedBatches > 0) {
+          setSummary(merged);
+          onDone();
+          await loadVideos(undefined);
+        }
         setRunError(
           error instanceof Error ? error.message : "Indexing failed",
         );
@@ -491,6 +533,19 @@ function CreatorIndexing({
   const titleOf = (videoId: string): string =>
     videos?.find((video) => video.id === videoId)?.title || videoId;
 
+  const needingIndex = videos ? selectAllNeedingIndex(videos) : [];
+  const allNeedingSelected =
+    needingIndex.length > 0 &&
+    needingIndex.every((id) => selected.has(id));
+
+  const toggleSelectAll = () => {
+    if (allNeedingSelected) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(needingIndex));
+    }
+  };
+
   return (
     <div className="mt-4 border-t border-border pt-3">
       <h3 className="font-display text-lg font-bold">
@@ -499,6 +554,31 @@ function CreatorIndexing({
       <p className="mt-2 text-muted">
         Tick videos, then press Index. This takes a few minutes.
       </p>
+      {videos !== null && videos.length > 0 && (
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={toggleSelectAll}
+            disabled={running || needingIndex.length === 0}
+            className="rounded-lg border border-border px-4 py-2 font-medium text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {allNeedingSelected
+              ? "Clear selection"
+              : needingIndex.length === 0
+                ? "Select all to index"
+                : `Select all to index (${needingIndex.length})`}
+          </button>
+          {nextPageToken && (
+            <p className="mt-1 text-sm text-muted">
+              Load more videos to add the rest.
+            </p>
+          )}
+          <p className="mt-1 text-sm text-muted">
+            Indexing uses your daily budget. Large selections can pause when
+            it runs out.
+          </p>
+        </div>
+      )}
       {videosError && (
         <p role="alert" className="mt-2 text-destructive">
           {videosError}

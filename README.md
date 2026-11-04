@@ -24,6 +24,23 @@ Built for the **Build for Your World** hackathon. All work on this project,
 including code, README, and spec, starts on Oct 27, 2026 and finishes by the
 Nov 4 deadline.
 
+## Screenshots
+
+Quote search: a remembered line, the result card with the verification note,
+and the other matches.
+
+![Quote search result card](screenshots/quote-search.png)
+
+Share card: an AI-generated background, with the app drawing the exact
+sentence on top.
+
+![Share card with the quote drawn by the app](screenshots/share-card.png)
+
+Creator archive: a creator's own captions, searched, with the timestamp
+verified from those captions. Only the signed-in creator can see this page.
+
+![Creator archive search result](screenshots/creator-archive.png)
+
 ## Run it yourself
 
 What you need: Node.js (tested with version 24)

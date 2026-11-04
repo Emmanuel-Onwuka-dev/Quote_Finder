@@ -239,7 +239,7 @@ Every found result must say the timestamp is not verified.
 
 ### 7.3 Muse Spark: query variants, ranking, and fallback
 
-Muse Spark does three jobs, all for YouTube only. Its chat calls share a daily budget of 1000 calls per UTC day, counted per process. When the budget is spent, the variant and ranking calls return empty results, and the memory fallback degrades to title and description matches with a plain-language note.
+Muse Spark does three jobs, all for YouTube only. Its chat calls share a daily budget of 1000 calls per UTC day, counted per process. When the budget is spent, the variant and ranking calls return empty results, and the memory fallback degrades to title and description matches with a plain-language note. Muse Spark chat calls have a daily cap of 1000 per UTC day per server process. When the cap is reached, search still runs on title and description matches, and the result says that the model limit is reached.
 
 1. **Query variants (before search).** Ask `TEXT_MODEL` for 3 to 5 alternative wordings of the quote, as a JSON array. Use them as extra search queries (section 5.4). When Glimmer is enabled, it takes one of the 3 search slots, after the first two Muse Spark wordings. The total number of searches does not change.
 2. **Ranking (after scoring, whenever the shortlist is non-empty).** Send the shortlist (titles, descriptions, URLs, dates), the quote, the scene, and the time window. Ask it to pick the best matches and give a one-line reason for each. Only shortlist URLs may be chosen.
@@ -493,7 +493,7 @@ In the browser, confirm:
 
 **Result display.** Matched caption text is shown only to the signed-in creator, on the /creator page. The search page does not include the archive.
 
-**Budget and failures.** Keep the daily YouTube quota budget. A failed sign-in, token refresh, or caption call returns a clear message, never an unhandled throw (section 1).
+**Budget and failures.** Keep the daily YouTube quota budget. A failed sign-in, token refresh, or caption call returns a clear message, never an unhandled throw (section 1). If an indexing run ends without a result, the page shows "Indexing ended without a result".
 
 ### 13A.4 Retention
 

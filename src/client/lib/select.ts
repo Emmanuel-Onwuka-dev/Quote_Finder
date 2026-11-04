@@ -1,9 +1,8 @@
-// Video selection helpers for the creator archive page: "select all"
-// picks every loaded video that still needs indexing. The server takes at
-// most 200 IDs per request, so the caller batches the result. Unit tested
-// in select.test.ts.
+// Video selection helpers for the creator archive page. The server takes
+// at most 200 IDs per request, so the caller batches the result. Unit
+// tested in select.test.ts.
 
-/** The fields selectAllNeedingIndex reads from each video entry. */
+/** The fields the selection helpers read from each video entry. */
 export interface IndexableVideo {
   id: string;
   indexed: "fresh" | "expired" | "never";
@@ -14,4 +13,9 @@ export function selectAllNeedingIndex(videos: IndexableVideo[]): string[] {
   return videos
     .filter((video) => video.indexed === "never" || video.indexed === "expired")
     .map((video) => video.id);
+}
+
+/** IDs of every video, whatever its state, in list order. */
+export function selectAllLoaded(videos: IndexableVideo[]): string[] {
+  return videos.map((video) => video.id);
 }

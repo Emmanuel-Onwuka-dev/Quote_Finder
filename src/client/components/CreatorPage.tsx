@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProgressUpdate } from "../hooks/useQuoteStream";
 import { useVoiceInput } from "../hooks/use-voice-input";
 import { formatDate } from "../lib/format";
-import { selectAllNeedingIndex } from "../lib/select";
+import { selectAllLoaded } from "../lib/select";
 import { createSseParser } from "../lib/sse";
 import {
   ArchiveResultCard,
@@ -533,16 +533,15 @@ function CreatorIndexing({
   const titleOf = (videoId: string): string =>
     videos?.find((video) => video.id === videoId)?.title || videoId;
 
-  const needingIndex = videos ? selectAllNeedingIndex(videos) : [];
-  const allNeedingSelected =
-    needingIndex.length > 0 &&
-    needingIndex.every((id) => selected.has(id));
+  const allLoaded = videos ? selectAllLoaded(videos) : [];
+  const allLoadedSelected =
+    allLoaded.length > 0 && allLoaded.every((id) => selected.has(id));
 
   const toggleSelectAll = () => {
-    if (allNeedingSelected) {
+    if (allLoadedSelected) {
       setSelected(new Set());
     } else {
-      setSelected(new Set(needingIndex));
+      setSelected(new Set(allLoaded));
     }
   };
 
@@ -559,14 +558,14 @@ function CreatorIndexing({
           <button
             type="button"
             onClick={toggleSelectAll}
-            disabled={running || needingIndex.length === 0}
+            disabled={running || allLoaded.length === 0}
             className="rounded-lg border border-border px-4 py-2 font-medium text-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {allNeedingSelected
+            {allLoadedSelected
               ? "Clear selection"
-              : needingIndex.length === 0
-                ? "Select all to index"
-                : `Select all to index (${needingIndex.length})`}
+              : allLoaded.length === 0
+                ? "Select all"
+                : `Select all (${allLoaded.length})`}
           </button>
           {nextPageToken && (
             <p className="mt-1 text-sm text-muted">

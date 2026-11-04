@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { selectAllNeedingIndex } from "./select";
+import { selectAllLoaded, selectAllNeedingIndex } from "./select";
 
 describe("selectAllNeedingIndex", () => {
   it("excludes fresh videos", () => {
@@ -24,5 +24,24 @@ describe("selectAllNeedingIndex", () => {
     expect(ids).toHaveLength(250);
     expect(ids[0]).toBe("video-0");
     expect(ids[249]).toBe("video-249");
+  });
+});
+
+describe("selectAllLoaded", () => {
+  it("returns every ID in list order, including indexed ones", () => {
+    const videos = [
+      { id: "fresh1", indexed: "fresh" as const },
+      { id: "never1", indexed: "never" as const },
+      { id: "expired1", indexed: "expired" as const },
+    ];
+    expect(selectAllLoaded(videos)).toEqual([
+      "fresh1",
+      "never1",
+      "expired1",
+    ]);
+  });
+
+  it("returns an empty array for an empty list", () => {
+    expect(selectAllLoaded([])).toEqual([]);
   });
 });

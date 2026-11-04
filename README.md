@@ -221,6 +221,39 @@ empty to turn this off. Note: the Sentry dependency chain has known
 moderate advisories (glob, minimatch); the app does not pass user
 input to glob or minimatch, and it will be upgraded after the hackathon.
 
+## Known limitations
+
+- Timestamps are estimates for quote search. Quote search
+  matches titles and descriptions and does not read captions,
+  so it cannot verify when a line is said.
+- Lines that are spoken but not written in a title or
+  description cannot be found by quote search.
+- Answers from memory are estimates, not verified matches:
+  when no video matches, the model suggests candidates. Each
+  link is checked before it is shown, but the video can still
+  be the wrong one.
+- On the hosted site the archive is limited to test-user
+  accounts; see Run it yourself.
+- The creator archive covers only the signed-in creator's own
+  videos, and caption text is shown only to that creator. No
+  public page shows caption text.
+- Captions are kept for 30 days, then deleted.
+- The model call budgets are counted in memory, so each
+  server process keeps its own count. A server restart resets
+  them.
+- Daily limits use these defaults: YouTube search 3000 units,
+  creator indexing 5000 units, Muse Spark chat 1000 calls,
+  voice transcription 2000 calls, share cards 500 calls. One
+  quote search spends roughly 400 to 500 YouTube units, so the
+  default covers about six to seven searches a day.
+- Voice input accepts WAV recordings only, from 2 KB to
+  32 MB, and up to 10 minutes long.
+- Muse Glimmer adds extra search wordings, but only from a
+  Glimmer server on your own machine. The hosted site leaves
+  it off.
+- The Sentry chain note under Development still stands: its
+  advisories wait until after the hackathon.
+
 ## Licence
 
 This project is licensed under the MIT Licence. See [LICENSE](LICENSE).

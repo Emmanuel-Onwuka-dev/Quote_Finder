@@ -7,7 +7,7 @@ import {
   videoIdFromUrl,
   youtubeEmbedUrl,
 } from "../lib/format";
-import { cardActions, shareText } from "../lib/share";
+import { cardActions, copyToClipboard, shareText } from "../lib/share";
 
 interface ResultCardProps {
   result: LocateResult;
@@ -209,8 +209,12 @@ export function selectedMain(
 
 export function ResultCard({ result, timeWindow }: ResultCardProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const [copied, setCopied] = useState(false);
-  const [shareCopied, setShareCopied] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">(
+    "idle",
+  );
+  const [shareStatus, setShareStatus] = useState<
+    "idle" | "copied" | "failed"
+  >("idle");
   const [cardImage, setCardImage] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const candidates = result.candidates;
@@ -258,24 +262,20 @@ export function ResultCard({ result, timeWindow }: ResultCardProps) {
   }, []);
 
   useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), 2000);
+    if (copyStatus === "idle") return;
+    const timer = window.setTimeout(() => setCopyStatus("idle"), 2000);
     return () => window.clearTimeout(timer);
-  }, [copied]);
+  }, [copyStatus]);
 
   useEffect(() => {
-    if (!shareCopied) return;
-    const timer = window.setTimeout(() => setShareCopied(false), 2000);
+    if (shareStatus === "idle") return;
+    const timer = window.setTimeout(() => setShareStatus("idle"), 2000);
     return () => window.clearTimeout(timer);
-  }, [shareCopied]);
+  }, [shareStatus]);
 
   const copyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(main.videoUrl);
-      setCopied(true);
-    } catch {
-      // Clipboard unavailable; leave the button unchanged.
-    }
+    const ok = await copyToClipboard(main.videoUrl);
+    setCopyStatus(ok ? "copied" : "failed");
   };
 
   const downloadCard = async () => {
@@ -304,14 +304,10 @@ export function ResultCard({ result, timeWindow }: ResultCardProps) {
   };
 
   const copyShareText = async () => {
-    try {
-      await navigator.clipboard.writeText(
-        shareText(result.fullSentence, main.videoUrl),
-      );
-      setShareCopied(true);
-    } catch {
-      // Clipboard unavailable; leave the button unchanged.
-    }
+    const ok = await copyToClipboard(
+      shareText(result.fullSentence, main.videoUrl),
+    );
+    setShareStatus(ok ? "copied" : "failed");
   };
 
   const shareResult = async () => {
@@ -438,7 +434,11 @@ export function ResultCard({ result, timeWindow }: ResultCardProps) {
           onClick={() => void copyLink()}
           className={actionButton}
         >
-          {copied ? "Copied" : "Copy link"}
+          {copyStatus === "copied"
+            ? "Copied"
+            : copyStatus === "failed"
+              ? "Copy failed"
+              : "Copy link"}
         </button>
         {actions.share && (
           <button
@@ -446,7 +446,11 @@ export function ResultCard({ result, timeWindow }: ResultCardProps) {
             onClick={() => void shareResult()}
             className={actionButton}
           >
-            {shareCopied ? "Copied" : "Share"}
+            {shareStatus === "copied"
+              ? "Copied"
+              : shareStatus === "failed"
+                ? "Copy failed"
+                : "Share"}
           </button>
         )}
         {actions.download && (

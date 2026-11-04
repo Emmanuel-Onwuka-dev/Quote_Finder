@@ -20,6 +20,46 @@ export function archiveShareText(videoTitle: string, videoUrl: string): string {
   return `${trimmed}\n${videoUrl}`;
 }
 
+/** Copy text to the clipboard. Uses the async clipboard API when it is
+ * available, otherwise a temporary textarea with execCommand. Never
+ * throws: resolves false when nothing worked, so the caller can say so. */
+export async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    const clipboard = globalThis.navigator?.clipboard;
+    if (clipboard && typeof clipboard.writeText === "function") {
+      await clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Fall through to the legacy path.
+  }
+  try {
+    const doc = globalThis.document;
+    if (
+      !doc ||
+      typeof doc.createElement !== "function" ||
+      typeof doc.execCommand !== "function" ||
+      !doc.body
+    ) {
+      return false;
+    }
+    const area = doc.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    doc.body.appendChild(area);
+    try {
+      area.select();
+      return doc.execCommand("copy");
+    } finally {
+      doc.body.removeChild(area);
+    }
+  } catch {
+    return false;
+  }
+}
+
 /** Minimal result shape the card-action rules need. */
 export interface CardActionInput {
   found: boolean;

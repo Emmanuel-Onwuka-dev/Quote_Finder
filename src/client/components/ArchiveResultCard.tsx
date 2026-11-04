@@ -6,7 +6,7 @@ import {
   youtubeEmbedUrl,
 } from "../lib/format";
 import { openExternal } from "../lib/openExternal";
-import { archiveShareText } from "../lib/share";
+import { archiveShareText, copyToClipboard } from "../lib/share";
 
 /** One creator-archive match, as returned by POST /api/archive/search. */
 export interface CreatorArchiveMatch {
@@ -31,41 +31,37 @@ export function ArchiveResultCard({
   result,
   timeWindow,
 }: ArchiveResultCardProps) {
-  const [copied, setCopied] = useState(false);
-  const [shareCopied, setShareCopied] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">(
+    "idle",
+  );
+  const [shareStatus, setShareStatus] = useState<
+    "idle" | "copied" | "failed"
+  >("idle");
   const videoId = videoIdFromUrl(result.videoUrl);
   const published = formatDate(result.publishedAt);
 
   useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), 2000);
+    if (copyStatus === "idle") return;
+    const timer = window.setTimeout(() => setCopyStatus("idle"), 2000);
     return () => window.clearTimeout(timer);
-  }, [copied]);
+  }, [copyStatus]);
 
   useEffect(() => {
-    if (!shareCopied) return;
-    const timer = window.setTimeout(() => setShareCopied(false), 2000);
+    if (shareStatus === "idle") return;
+    const timer = window.setTimeout(() => setShareStatus("idle"), 2000);
     return () => window.clearTimeout(timer);
-  }, [shareCopied]);
+  }, [shareStatus]);
 
   const copyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(result.videoUrl);
-      setCopied(true);
-    } catch {
-      // Clipboard unavailable; leave the button unchanged.
-    }
+    const ok = await copyToClipboard(result.videoUrl);
+    setCopyStatus(ok ? "copied" : "failed");
   };
 
   const copyShareText = async () => {
-    try {
-      await navigator.clipboard.writeText(
-        archiveShareText(result.videoTitle, result.videoUrl),
-      );
-      setShareCopied(true);
-    } catch {
-      // Clipboard unavailable; leave the button unchanged.
-    }
+    const ok = await copyToClipboard(
+      archiveShareText(result.videoTitle, result.videoUrl),
+    );
+    setShareStatus(ok ? "copied" : "failed");
   };
 
   // Video link only: title and URL. The matched caption text,
@@ -141,14 +137,22 @@ export function ArchiveResultCard({
           onClick={() => void copyLink()}
           className="rounded-lg border border-border px-4 py-2 font-medium text-foreground"
         >
-          {copied ? "Copied" : "Copy link"}
+          {copyStatus === "copied"
+            ? "Copied"
+            : copyStatus === "failed"
+              ? "Copy failed"
+              : "Copy link"}
         </button>
         <button
           type="button"
           onClick={() => void shareLink()}
           className="rounded-lg border border-border px-4 py-2 font-medium text-foreground"
         >
-          {shareCopied ? "Copied" : "Share link"}
+          {shareStatus === "copied"
+            ? "Copied"
+            : shareStatus === "failed"
+              ? "Copy failed"
+              : "Share link"}
         </button>
         {videoId && (
           <button

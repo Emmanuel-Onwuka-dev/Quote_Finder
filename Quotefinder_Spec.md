@@ -484,7 +484,7 @@ In the browser, confirm:
 
 **What the creator can do.**
 - See their connected channel and list of uploads with indexed state.
-- Index a video's captions, on demand and within the daily budget.
+- Index a video's captions, on demand and within the daily budget. Select all picks only videos that are not yet indexed or whose captions have expired, so indexed videos do not use the budget again.
 - Search their own indexed captions for a line. A match shows the video, the matched caption text, and an embedded player at the verified timestamp when the match is a caption cue with a timestamp.
 
 **What the creator cannot see or do.**

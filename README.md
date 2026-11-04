@@ -26,7 +26,7 @@ Nov 4 deadline.
 
 ## Run it yourself
 
-What you need: Node.js (version 20 or later)
+What you need: Node.js (tested with version 24)
 and two API keys: a Meta Model API key and a YouTube Data API key.
 
 Where to get the keys: get a Meta Model API key from the Meta Model API

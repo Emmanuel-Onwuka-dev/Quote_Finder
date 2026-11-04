@@ -194,7 +194,8 @@ $env:SEARCH_BUDGET_UNITS="10000"   # same terminal, before npm run dev:server
 
 Muse Spark chat calls have their own cap of 1000 per UTC day per server
 process. When it is reached, search still runs on title and description
-matches, and the result says that the model limit is reached.
+matches. If no match is found, the result says that the model limit is
+reached.
 
 Errors are logged to the server console with the step name. If
 SENTRY_DSN is set, they are also sent to Sentry, with request bodies,
